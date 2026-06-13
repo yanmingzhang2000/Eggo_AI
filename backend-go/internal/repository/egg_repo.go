@@ -91,10 +91,7 @@ func (r *EggRepository) GetFilteredNewsByFunds(fundCodes []string, date time.Tim
 	}
 
 	if len(conditions) > 0 {
-		query = query.Where(
-			r.db.Where(conditions[0], args[0...1]...),
-		)
-		// 对于多个条件，使用 OR 连接
+		query = query.Where(conditions[0], args[0])
 		for i := 1; i < len(conditions); i++ {
 			query = query.Or(conditions[i], args[i])
 		}

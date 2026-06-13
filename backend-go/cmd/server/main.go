@@ -44,7 +44,7 @@ func loadConfig() *config.Config {
 			Host:     getEnv("DB_HOST", "localhost"),
 			Port:     3306,
 			User:     getEnv("DB_USER", "root"),
-			Password: getEnv("DB_PASS", ""),
+			Password: getEnv("DB_PASS", "root123"),
 			DBName:   getEnv("DB_NAME", "jishengdan"),
 		},
 	}

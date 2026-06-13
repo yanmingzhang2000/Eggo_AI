@@ -1,7 +1,5 @@
 package dto
 
-import "github.com/shopspring/decimal"
-
 // EggStatusResponse 母鸡状态总响应（TypeScript 友好命名）
 type EggStatusResponse struct {
 	ChickenStatus ChickenStatus   `json:"chickenStatus"`
