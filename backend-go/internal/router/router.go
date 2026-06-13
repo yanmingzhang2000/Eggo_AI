@@ -10,43 +10,40 @@ import (
 )
 
 // Setup 初始化路由
-func Setup(db *gorm.DB) *gin.Engine {
+func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
 
 	// ── 依赖注入 ──────────────────────────────────────────────
 	// Repository 层
+	userRepo := repository.NewUserRepository(db)
 	eggRepo := repository.NewEggRepository(db)
 
 	// Service 层
+	authSvc := service.NewAuthService(userRepo, jwtSecret)
 	eggSvc := service.NewEggService(eggRepo)
 
 	// Controller 层
+	authCtrl := controller.NewAuthController(authSvc)
 	eggCtrl := controller.NewEggController(eggSvc)
 
 	// ── 路由注册 ──────────────────────────────────────────────
 	api := r.Group("/api/v1")
 	{
-		// 母鸡状态（核心接口）
+		// 认证
+		auth := api.Group("/auth")
+		{
+			auth.POST("/register", authCtrl.Register)
+			auth.POST("/login", authCtrl.Login)
+			auth.POST("/guest", authCtrl.GuestLogin)
+		}
+
+		// 母鸡状态（核心接口，支持游客访问）
 		egg := api.Group("/egg")
 		{
 			egg.GET("/status", eggCtrl.GetStatus)
 		}
-
-		// 预留路由（后续扩展）
-		// auth := api.Group("/auth")
-		// {
-		//     auth.POST("/register", userCtrl.Register)
-		//     auth.POST("/login",    userCtrl.Login)
-		// }
-		//
-		// funds := api.Group("/funds")
-		// {
-		//     funds.GET("",          fundCtrl.List)
-		//     funds.GET("/:code",    fundCtrl.Detail)
-		//     funds.GET("/:code/nav", fundCtrl.NavHistory)
-		// }
 	}
 
 	return r

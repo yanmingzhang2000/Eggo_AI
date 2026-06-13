@@ -1,45 +1,68 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, computed } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import { useEggStore } from '@/stores/egg'
+import AuthPage from '@/components/AuthPage.vue'
 import ChickenStatusCard from '@/components/ChickenStatusCard.vue'
 import FundMetrics from '@/components/FundMetrics.vue'
 import NewsFeed from '@/components/NewsFeed.vue'
 
-const store = useEggStore()
+const authStore = useAuthStore()
+const eggStore = useEggStore()
+
+const isLoggedIn = computed(() => authStore.isLoggedIn)
 
 onMounted(() => {
-  store.fetchEggStatus()
+  if (isLoggedIn.value) {
+    eggStore.fetchEggStatus()
+  }
 })
 
 function handleRefresh() {
-  store.refresh()
+  eggStore.refresh()
+}
+
+function handleLogout() {
+  authStore.logout()
 }
 </script>
 
 <template>
-  <div class="page">
+  <!-- 未登录：显示登录/注册页 -->
+  <AuthPage v-if="!isLoggedIn" />
+
+  <!-- 已登录：显示主页面 -->
+  <div v-else class="page">
     <!-- Header -->
     <header class="header">
       <div class="header__left">
         <h1 class="header__title">🐔 鸡生蛋</h1>
         <span class="header__sub">Eggo · 智能基金决策</span>
       </div>
-      <button class="header__refresh" @click="handleRefresh" :disabled="store.loading">
-        <span :class="{ 'spin': store.loading }">↻</span>
-      </button>
+      <div class="header__right">
+        <span class="header__user">
+          {{ authStore.isGuest ? '👤 游客' : '👋 ' + authStore.username }}
+        </span>
+        <button class="header__btn" @click="handleRefresh" :disabled="eggStore.loading">
+          <span :class="{ 'spin': eggStore.loading }">↻</span>
+        </button>
+        <button class="header__btn header__btn--logout" @click="handleLogout">
+          退出
+        </button>
+      </div>
     </header>
 
     <!-- 加载态 -->
-    <div v-if="store.loading && !store.hasData" class="loading-wrap">
+    <div v-if="eggStore.loading && !eggStore.hasData" class="loading-wrap">
       <div class="loading-spinner"></div>
       <p class="loading-text">正在计算母鸡状态...</p>
     </div>
 
     <!-- 错误态 -->
-    <div v-else-if="store.error && !store.hasData" class="error-wrap">
+    <div v-else-if="eggStore.error && !eggStore.hasData" class="error-wrap">
       <p class="error-emoji">⚠️</p>
-      <p class="error-text">{{ store.error }}</p>
-      <button class="error-btn" @click="store.fetchEggStatus">重试</button>
+      <p class="error-text">{{ eggStore.error }}</p>
+      <button class="error-btn" @click="eggStore.fetchEggStatus">重试</button>
     </div>
 
     <!-- 主内容 -->
@@ -67,17 +90,17 @@ function handleRefresh() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 24px 32px;
+  padding: 20px 24px;
   border-bottom: 1px solid var(--border-color);
   position: sticky;
   top: 0;
-  background: rgba(10, 10, 10, 0.9);
+  background: rgba(10, 10, 10, 0.95);
   backdrop-filter: blur(20px);
   z-index: 100;
 }
 
 .header__title {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 700;
   margin: 0;
   letter-spacing: 2px;
@@ -85,32 +108,61 @@ function handleRefresh() {
 
 .header__sub {
   display: block;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-tertiary);
-  margin-top: 4px;
-  letter-spacing: 4px;
+  margin-top: 2px;
+  letter-spacing: 3px;
   text-transform: uppercase;
 }
 
-.header__refresh {
+.header__right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header__user {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.header__btn {
+  width: 36px;
+  height: 36px;
   background: rgba(255, 215, 0, 0.1);
   border: 1px solid rgba(255, 215, 0, 0.2);
   color: var(--accent);
-  width: 40px;
-  height: 40px;
   border-radius: 50%;
-  font-size: 20px;
+  font-size: 16px;
   cursor: pointer;
   transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.header__refresh:hover {
+.header__btn:hover {
   background: rgba(255, 215, 0, 0.2);
 }
 
-.header__refresh:disabled {
+.header__btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.header__btn--logout {
+  width: auto;
+  border-radius: 18px;
+  padding: 0 14px;
+  font-size: 12px;
+  background: transparent;
+  color: var(--text-tertiary);
+  border-color: var(--border-color);
+}
+
+.header__btn--logout:hover {
+  color: #ff4d4f;
+  border-color: rgba(255, 77, 79, 0.3);
 }
 
 .spin {
@@ -167,11 +219,6 @@ function handleRefresh() {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.2s;
-}
-
-.error-btn:hover {
-  transform: scale(1.05);
 }
 
 .main {

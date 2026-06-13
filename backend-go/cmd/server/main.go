@@ -21,7 +21,7 @@ func main() {
 	db := initDB(cfg)
 
 	// 3. 初始化路由
-	r := router.Setup(db)
+	r := router.Setup(db, cfg.JWT.Secret)
 
 	// 4. 启动服务器
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
@@ -46,6 +46,10 @@ func loadConfig() *config.Config {
 			User:     getEnv("DB_USER", "root"),
 			Password: getEnv("DB_PASS", "root123"),
 			DBName:   getEnv("DB_NAME", "jishengdan"),
+		},
+		JWT: config.JWTConfig{
+			Secret:     getEnv("JWT_SECRET", "eggo_jwt_secret_2024"),
+			ExpireHour: 72,
 		},
 	}
 }
