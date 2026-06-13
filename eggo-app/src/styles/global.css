@@ -1,0 +1,153 @@
+/* ═══════════════════════════════════════════════════════════════
+   鸡生蛋 · 全局样式 — 黑金极客科技风
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── 色彩系统 ──────────────────────────────────────────────── */
+  --bg-primary:    #0a0a0a;   /* 主背景：纯黑 */
+  --bg-card:       #141414;   /* 卡片背景：深灰 */
+  --bg-elevated:   #1a1a1a;   /* 抬升层 */
+
+  --accent:        #ffd700;   /* 主强调：金色 */
+  --accent-dim:    rgba(255, 215, 0, 0.6);
+
+  --text-primary:  #f0f0f0;   /* 主文字：近白 */
+  --text-secondary:#a0a0a0;   /* 次文字 */
+  --text-tertiary: #666666;   /* 辅助文字 */
+
+  --border-color:  rgba(255, 255, 255, 0.06);
+
+  /* ── 涨跌色 ──────────────────────────────────────────────── */
+  --color-up:      #ff4d4f;   /* 涨：红 */
+  --color-down:    #00c3ff;   /* 跌：青 */
+  --color-flat:    #666666;
+
+  /* ── 字体 ────────────────────────────────────────────────── */
+  --font-mono:     'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace;
+}
+
+/* ── 全局重置 ──────────────────────────────────────────────── */
+page {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+view, text {
+  box-sizing: border-box;
+}
+
+/* ── 滚动条隐藏（Web 端） ─────────────────────────────────── */
+::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* ── 通用工具类 ────────────────────────────────────────────── */
+.mono {
+  font-family: var(--font-mono);
+}
+
+.text-accent {
+  color: var(--accent);
+}
+
+.text-up {
+  color: var(--color-up);
+}
+
+.text-down {
+  color: var(--color-down);
+}
+
+/* ── 渐变文字（用于标题） ─────────────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, #ffd700 0%, #ffed4a 50%, #ffd700 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── 玻璃态卡片 ────────────────────────────────────────────── */
+.glass-card {
+  background: rgba(20, 20, 20, 0.8);
+  backdrop-filter: blur(20rpx);
+  -webkit-backdrop-filter: blur(20rpx);
+  border: 1rpx solid rgba(255, 215, 0, 0.1);
+  border-radius: 20rpx;
+}
+
+/* ── 发光边框动画 ──────────────────────────────────────────── */
+@keyframes glow-border {
+  0%, 100% {
+    border-color: rgba(255, 215, 0, 0.2);
+    box-shadow: 0 0 20rpx rgba(255, 215, 0, 0.05);
+  }
+  50% {
+    border-color: rgba(255, 215, 0, 0.4);
+    box-shadow: 0 0 40rpx rgba(255, 215, 0, 0.1);
+  }
+}
+
+.glow-animate {
+  animation: glow-border 3s ease-in-out infinite;
+}
+
+/* ── 扫描线效果（极客感） ──────────────────────────────────── */
+.scanline::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2rpx,
+    rgba(255, 215, 0, 0.01) 2rpx,
+    rgba(255, 215, 0, 0.01) 4rpx
+  );
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* ── 脉冲点 ────────────────────────────────────────────────── */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.5); }
+}
+
+.pulse {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* ── 淡入动画 ──────────────────────────────────────────────── */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fade-in-up 0.4s ease-out;
+}
+
+/* ── 数字跳动效果 ──────────────────────────────────────────── */
+@keyframes number-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+.number-pop {
+  animation: number-pop 0.3s ease-out;
+}

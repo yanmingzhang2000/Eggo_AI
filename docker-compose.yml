@@ -1,0 +1,241 @@
+# ═══════════════════════════════════════════════════════════════
+# 鸡生蛋 Eggo · 企业级 Docker Compose 编排
+# ═══════════════════════════════════════════════════════════════
+# 服务拓扑:
+#   nginx (443/80) ──┬──▶ go-api (8080)    核心业务 API
+#                    └──▶ python-ai (8000)  AI 异步微服务
+#   go-api ──────────────▶ mysql (3306)     主数据库
+#   python-ai ───────────▶ mysql (3306)     主数据库
+#   python-ai ───────────▶ redis (6379)     消息队列 + 缓存
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  # ──────────────────────────────────────────────────────────────
+  # 1. MySQL 8.0 — 主数据库
+  # ──────────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: eggo-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-eggo_root_2024}
+      MYSQL_DATABASE: ${DB_NAME:-jishengdan}
+      MYSQL_USER: ${DB_USER:-eggo}
+      MYSQL_PASSWORD: ${DB_PASS:-eggo_pass_2024}
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+      - ./database/conf/my.cnf:/etc/mysql/conf.d/custom.cnf:ro
+    networks:
+      - eggo-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-eggo_root_2024}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      --default-authentication-plugin=caching_sha2_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max-connections=500
+      --innodb-buffer-pool-size=256M
+
+  # ──────────────────────────────────────────────────────────────
+  # 2. Redis 7 — 消息队列 + 缓存
+  # ──────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: eggo-redis
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - eggo-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:-eggo_redis_2024}
+
+  # ──────────────────────────────────────────────────────────────
+  # 3. Go 核心业务 API
+  # ──────────────────────────────────────────────────────────────
+  go-api:
+    build:
+      context: ./backend-go
+      dockerfile: Dockerfile
+    container_name: eggo-go-api
+    restart: always
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-eggo}
+      DB_PASS: ${DB_PASS:-eggo_pass_2024}
+      DB_NAME: ${DB_NAME:-jishengdan}
+      GIN_MODE: release
+      TZ: Asia/Shanghai
+    ports:
+      - "8080:8080"
+    networks:
+      - eggo-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/v1/egg/status"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ──────────────────────────────────────────────────────────────
+  # 4. Python AI 异步微服务
+  # ──────────────────────────────────────────────────────────────
+  python-ai:
+    build:
+      context: ./ai-service-python
+      dockerfile: Dockerfile
+    container_name: eggo-python-ai
+    restart: always
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-eggo}
+      DB_PASS: ${DB_PASS:-eggo_pass_2024}
+      DB_NAME: ${DB_NAME:-jishengdan}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-eggo_redis_2024}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-eggo_redis_2024}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-eggo_redis_2024}@redis:6379/2
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
+      LLM_MODEL: ${LLM_MODEL:-gemini-3.1-flash-lite}
+      CRAWL_FUND_CODES: ${CRAWL_FUND_CODES:-110011,161725,012414}
+      TZ: Asia/Shanghai
+    ports:
+      - "8000:8000"
+    networks:
+      - eggo-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ──────────────────────────────────────────────────────────────
+  # 5. Nginx 反向代理 + SSL 终结
+  # ──────────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: eggo-nginx
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./deploy/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    networks:
+      - eggo-net
+    depends_on:
+      - go-api
+      - python-ai
+
+  # ──────────────────────────────────────────────────────────────
+  # 6. Celery Worker — 定时爬虫 + AI 任务
+  # ──────────────────────────────────────────────────────────────
+  celery-worker:
+    build:
+      context: ./ai-service-python
+      dockerfile: Dockerfile
+    container_name: eggo-celery-worker
+    restart: always
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-eggo}
+      DB_PASS: ${DB_PASS:-eggo_pass_2024}
+      DB_NAME: ${DB_NAME:-jishengdan}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-eggo_redis_2024}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-eggo_redis_2024}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-eggo_redis_2024}@redis:6379/2
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
+      LLM_MODEL: ${LLM_MODEL:-gemini-3.1-flash-lite}
+      CRAWL_FUND_CODES: ${CRAWL_FUND_CODES:-110011,161725,012414}
+      TZ: Asia/Shanghai
+    networks:
+      - eggo-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4
+
+  # ──────────────────────────────────────────────────────────────
+  # 7. Celery Beat — 定时调度器
+  # ──────────────────────────────────────────────────────────────
+  celery-beat:
+    build:
+      context: ./ai-service-python
+      dockerfile: Dockerfile
+    container_name: eggo-celery-beat
+    restart: always
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-eggo}
+      DB_PASS: ${DB_PASS:-eggo_pass_2024}
+      DB_NAME: ${DB_NAME:-jishengdan}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-eggo_redis_2024}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-eggo_redis_2024}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-eggo_redis_2024}@redis:6379/2
+      TZ: Asia/Shanghai
+    networks:
+      - eggo-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+
+# ──────────────────────────────────────────────────────────────
+# 网络配置
+# ──────────────────────────────────────────────────────────────
+networks:
+  eggo-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ──────────────────────────────────────────────────────────────
+# 持久化卷
+# ──────────────────────────────────────────────────────────────
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  nginx_logs:
+    driver: local
