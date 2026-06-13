@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
@@ -42,9 +42,9 @@ func loadConfig() *config.Config {
 		},
 		Database: config.DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
-			Port:     3306,
-			User:     getEnv("DB_USER", "root"),
-			Password: getEnv("DB_PASS", "root123"),
+			Port:     5432,
+			User:     getEnv("DB_USER", "postgres"),
+			Password: getEnv("DB_PASS", ""),
 			DBName:   getEnv("DB_NAME", "jishengdan"),
 		},
 		JWT: config.JWTConfig{
@@ -56,17 +56,28 @@ func loadConfig() *config.Config {
 
 // initDB 初始化数据库连接
 func initDB(cfg *config.Config) *gorm.DB {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		cfg.Database.User,
-		cfg.Database.Password,
-		cfg.Database.Host,
-		cfg.Database.Port,
-		cfg.Database.DBName,
-	)
+	var db *gorm.DB
+	var err error
 
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
-	})
+	// 优先使用 DATABASE_URL（Render 等平台提供）
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+			Logger: logger.Default.LogMode(logger.Info),
+		})
+	} else {
+		// 使用独立环境变量构建 DSN
+		dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=Asia/Shanghai",
+			cfg.Database.Host,
+			cfg.Database.User,
+			cfg.Database.Password,
+			cfg.Database.DBName,
+			cfg.Database.Port,
+		)
+		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+			Logger: logger.Default.LogMode(logger.Info),
+		})
+	}
+
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
