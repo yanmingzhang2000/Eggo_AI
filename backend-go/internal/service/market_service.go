@@ -10,6 +10,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
 
 // MarketService 大盘行情服务
@@ -108,7 +111,9 @@ func (s *MarketService) FetchSinaIndex(codes []string) ([]IndexData, error) {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	content := string(body)
+	reader := transform.NewReader(strings.NewReader(string(body)), simplifiedchinese.GBK.NewDecoder())
+	decoded, _ := io.ReadAll(reader)
+	content := string(decoded)
 
 	var results []IndexData
 	lines := strings.Split(content, "\n")
