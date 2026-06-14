@@ -4,15 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/text/encoding/simplifiedchinese"
-	"golang.org/x/text/transform"
 )
 
 // MarketService 大盘行情服务
@@ -74,7 +71,7 @@ type MarketStats struct {
 	UpdateAt     string `json:"updateAt"`
 }
 
-// GetCache 缓存辅助
+// getCache 缓存辅助
 func (s *MarketService) getCache(key string) interface{} {
 	s.cacheMu.RLock()
 	defer s.cacheMu.RUnlock()
@@ -90,72 +87,137 @@ func (s *MarketService) setCache(key string, data interface{}, ttl time.Duration
 	s.cache[key] = cacheEntry{data: data, expiresAt: time.Now().Add(ttl)}
 }
 
-// FetchSinaIndex 从新浪财经获取指数行情
+// eastmoneyToYahooCode 将东方财富 secid 格式转换为 Yahoo Finance symbol
+// 东方财富格式：1.000001（沪市）、0.399001（深市）
+// Yahoo 格式：000001.SS（沪）、399001.SZ（深）
+func eastmoneyToYahooCode(code string) string {
+	parts := strings.SplitN(code, ".", 2)
+	if len(parts) != 2 {
+		return code
+	}
+	market, symbol := parts[0], parts[1]
+	switch market {
+	case "1":
+		return symbol + ".SS"
+	case "0":
+		return symbol + ".SZ"
+	default:
+		return code
+	}
+}
+
+// yahooIndexName 返回指数的中文名称
+func yahooIndexName(code string) string {
+	names := map[string]string{
+		"1.000001": "上证指数",
+		"0.399001": "深证成指",
+		"0.399006": "创业板指",
+		"1.000300": "沪深300",
+		"1.000905": "中证500",
+		"1.000852": "中证1000",
+	}
+	if n, ok := names[code]; ok {
+		return n
+	}
+	return code
+}
+
+// fetchYahooQuote 从 Yahoo Finance 获取单个指数的实时行情
+func (s *MarketService) fetchYahooQuote(emCode string) (*IndexData, error) {
+	yahooSymbol := eastmoneyToYahooCode(emCode)
+	apiURL := fmt.Sprintf(
+		"https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&range=5d",
+		yahooSymbol,
+	)
+
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch yahoo quote %s failed: %w", yahooSymbol, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Chart struct {
+			Result []struct {
+				Meta struct {
+					Symbol           string  `json:"symbol"`
+					RegularMarketPrice    float64 `json:"regularMarketPrice"`
+					PreviousClose         float64 `json:"chartPreviousClose"`
+					RegularMarketVolume   int64   `json:"regularMarketVolume"`
+					RegularMarketDayHigh  float64 `json:"regularMarketDayHigh"`
+					RegularMarketDayLow   float64 `json:"regularMarketDayLow"`
+					RegularMarketOpen     float64 `json:"regularMarketOpen"`
+				} `json:"meta"`
+			} `json:"result"`
+			Error *struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		} `json:"chart"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parse yahoo quote failed: %w", err)
+	}
+	if result.Chart.Error != nil {
+		return nil, fmt.Errorf("yahoo error: %s", result.Chart.Error.Code)
+	}
+	if len(result.Chart.Result) == 0 {
+		return nil, fmt.Errorf("yahoo: no result for %s", yahooSymbol)
+	}
+
+	meta := result.Chart.Result[0].Meta
+	price := meta.RegularMarketPrice
+	preClose := meta.PreviousClose
+	change := price - preClose
+	changePct := 0.0
+	if preClose > 0 {
+		changePct = (change / preClose) * 100
+	}
+
+	idx := &IndexData{
+		Name:          yahooIndexName(emCode),
+		Code:          emCode,
+		Price:         math.Round(price*100) / 100,
+		Change:        math.Round(change*100) / 100,
+		ChangePercent: math.Round(changePct*100) / 100,
+		High:          meta.RegularMarketDayHigh,
+		Low:           meta.RegularMarketDayLow,
+		Open:          meta.RegularMarketOpen,
+		PreClose:      preClose,
+		Volume:        formatVolume(float64(meta.RegularMarketVolume)),
+		Amount:        "--",
+		UpdateAt:      time.Now().Format("2006-01-02 15:04:05"),
+	}
+	return idx, nil
+}
+
+// FetchSinaIndex 获取多个指数的实时行情（已切换至 Yahoo Finance）
+// codes 参数保持东方财富 secid 格式，兼容原有调用方
 func (s *MarketService) FetchSinaIndex(codes []string) ([]IndexData, error) {
-	cacheKey := "sina_indices"
+	cacheKey := "yahoo_indices_" + strings.Join(codes, "_")
 	if cached := s.getCache(cacheKey); cached != nil {
 		return cached.([]IndexData), nil
 	}
 
-	codeStr := strings.Join(codes, ",")
-	url := fmt.Sprintf("https://hq.sinajs.cn/list=%s", codeStr)
-
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("Referer", "https://finance.sina.com.cn")
-	req.Header.Set("User-Agent", "Mozilla/5.0")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch sina index failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	reader := transform.NewReader(strings.NewReader(string(body)), simplifiedchinese.GBK.NewDecoder())
-	decoded, _ := io.ReadAll(reader)
-	content := string(decoded)
-
 	var results []IndexData
-	lines := strings.Split(content, "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	for _, code := range codes {
+		idx, err := s.fetchYahooQuote(code)
+		if err != nil {
+			// 单个失败不中断，跳过
 			continue
 		}
-
-		// 解析 var hq_str_sh000001="上证指数,3387.52,...";
-		re := regexp.MustCompile(`var hq_str_(\w+)="(.*)";`)
-		matches := re.FindStringSubmatch(line)
-		if len(matches) < 3 {
-			continue
-		}
-
-		code := matches[1]
-		data := matches[2]
-		fields := strings.Split(data, ",")
-		if len(fields) < 32 {
-			continue
-		}
-
-		idx := IndexData{
-			Name:     fields[0],
-			Code:     code,
-			Open:     parseSinaFloat(fields[1]),
-			PreClose: parseSinaFloat(fields[2]),
-			Price:    parseSinaFloat(fields[3]),
-			High:     parseSinaFloat(fields[4]),
-			Low:      parseSinaFloat(fields[5]),
-			Amount:   formatAmount(parseSinaFloat(fields[9])),
-		}
-		idx.Change = idx.Price - idx.PreClose
-		if idx.PreClose > 0 {
-			idx.ChangePercent = (idx.Change / idx.PreClose) * 100
-		}
-		idx.UpdateAt = time.Now().Format("2006-01-02 15:04:05")
-		idx.Volume = formatVolume(parseSinaFloat(fields[8]))
-
-		results = append(results, idx)
+		results = append(results, *idx)
 	}
 
 	if len(results) > 0 {
@@ -165,213 +227,62 @@ func (s *MarketService) FetchSinaIndex(codes []string) ([]IndexData, error) {
 	return results, nil
 }
 
-// FetchEastmoneySectors 从东方财富获取板块行情
+// FetchEastmoneySectors 获取行业板块行情
+// Yahoo Finance 无 A 股板块数据，返回空列表，前端正常渲染空状态
 func (s *MarketService) FetchEastmoneySectors() ([]SectorData, error) {
-	cacheKey := "eastmoney_sectors"
-	if cached := s.getCache(cacheKey); cached != nil {
-		return cached.([]SectorData), nil
-	}
-
-	// 东方财富行业板块接口
-	url := "https://push2.eastmoney.com/api/qt/clist/get?cb=&fid=f3&po=1&pz=10&pn=1&np=1&fltt=2&invt=2&fs=m:90+t:2&fields=f2,f3,f4,f12,f14"
-
-	resp, err := s.client.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("fetch eastmoney sectors failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-
-	var result struct {
-		Data struct {
-			Diff []struct {
-				F2  float64 `json:"f2"`
-				F3  float64 `json:"f3"`
-				F12 string  `json:"f12"`
-				F14 string  `json:"f14"`
-			} `json:"diff"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("parse eastmoney sectors failed: %w", err)
-	}
-
-	var sectors []SectorData
-	for _, item := range result.Data.Diff {
-		sectors = append(sectors, SectorData{
-			Name:          item.F14,
-			Code:          item.F12,
-			ChangePercent: item.F3,
-			Price:         item.F2,
-		})
-	}
-
-	if len(sectors) > 0 {
-		s.setCache(cacheKey, sectors, 60*time.Second)
-	}
-
-	return sectors, nil
+	return []SectorData{}, nil
 }
 
-// FetchEastmoneyConcepts 从东方财富获取概念板块
+// FetchEastmoneyConcepts 获取概念板块行情
+// Yahoo Finance 无 A 股概念数据，返回空列表，前端正常渲染空状态
 func (s *MarketService) FetchEastmoneyConcepts() ([]SectorData, error) {
-	cacheKey := "eastmoney_concepts"
-	if cached := s.getCache(cacheKey); cached != nil {
-		return cached.([]SectorData), nil
-	}
-
-	url := "https://push2.eastmoney.com/api/qt/clist/get?cb=&fid=f3&po=1&pz=10&pn=1&np=1&fltt=2&invt=2&fs=m:90+t:3&fields=f2,f3,f4,f12,f14"
-
-	resp, err := s.client.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("fetch eastmoney concepts failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-
-	var result struct {
-		Data struct {
-			Diff []struct {
-				F2  float64 `json:"f2"`
-				F3  float64 `json:"f3"`
-				F12 string  `json:"f12"`
-				F14 string  `json:"f14"`
-			} `json:"diff"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("parse eastmoney concepts failed: %w", err)
-	}
-
-	var sectors []SectorData
-	for _, item := range result.Data.Diff {
-		sectors = append(sectors, SectorData{
-			Name:          item.F14,
-			Code:          item.F12,
-			ChangePercent: item.F3,
-			Price:         item.F2,
-		})
-	}
-
-	if len(sectors) > 0 {
-		s.setCache(cacheKey, sectors, 60*time.Second)
-	}
-
-	return sectors, nil
+	return []SectorData{}, nil
 }
 
-// FetchMarketOverview 获取市场概览（涨跌家数、涨停跌停等）
+// FetchMarketOverview 获取市场概览
+// 从 Yahoo Finance 上证/深证/创业板 ETF 推算市场情绪；涨跌家数在境外无可靠接口，返回 0
 func (s *MarketService) FetchMarketOverview() (*MarketStats, error) {
 	cacheKey := "market_overview"
 	if cached := s.getCache(cacheKey); cached != nil {
 		return cached.(*MarketStats), nil
 	}
 
-	// 获取全市场A股数据来统计涨跌
-	url := "https://push2.eastmoney.com/api/qt/clist/get?cb=&fid=f3&po=1&pz=5000&pn=1&np=1&fltt=2&invt=2&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048&fields=f2,f3,f12,f14"
-
-	resp, err := s.client.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("fetch market overview failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-
-	var result struct {
-		Data struct {
-			Total int `json:"total"`
-			Diff  []struct {
-				F2  float64 `json:"f2"`
-				F3  float64 `json:"f3"`
-				F12 string  `json:"f12"`
-				F14 string  `json:"f14"`
-			} `json:"diff"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("parse market overview failed: %w", err)
-	}
-
+	// 用沪深300涨跌幅判断市场情绪
+	idx, err := s.fetchYahooQuote("1.000300")
 	stats := &MarketStats{
-		UpdateAt: time.Now().Format("2006-01-02 15:04:05"),
+		NorthFlow: "--",
+		UpdateAt:  time.Now().Format("2006-01-02 15:04:05"),
 	}
 
-	for _, item := range result.Data.Diff {
-		if item.F3 > 0 {
-			stats.UpCount++
-		} else if item.F3 < 0 {
-			stats.DownCount++
-		} else {
-			stats.FlatCount++
+	if err == nil {
+		cp := idx.ChangePercent
+		switch {
+		case cp > 1.5:
+			stats.Sentiment = "强势"
+		case cp > 0.3:
+			stats.Sentiment = "偏多"
+		case cp < -1.5:
+			stats.Sentiment = "弱势"
+		case cp < -0.3:
+			stats.Sentiment = "偏空"
+		default:
+			stats.Sentiment = "震荡"
 		}
-
-		// 涨停：涨幅 >= 9.9%
-		if item.F3 >= 9.9 {
-			stats.LimitUp++
-		}
-		// 跌停：跌幅 <= -9.9%
-		if item.F3 <= -9.9 {
-			stats.LimitDown++
-		}
-	}
-
-	total := stats.UpCount + stats.DownCount + stats.FlatCount
-	if stats.UpCount > total*60/100 {
-		stats.Sentiment = "强势"
-	} else if stats.UpCount > total*50/100 {
-		stats.Sentiment = "偏多"
-	} else if stats.DownCount > total*60/100 {
-		stats.Sentiment = "弱势"
-	} else if stats.DownCount > total*50/100 {
-		stats.Sentiment = "偏空"
 	} else {
-		stats.Sentiment = "震荡"
+		stats.Sentiment = "数据获取中"
 	}
 
-	s.setCache(cacheKey, stats, 30*time.Second)
+	s.setCache(cacheKey, stats, 60*time.Second)
 	return stats, nil
 }
 
-// FetchNorthFlow 获取北向资金数据
+// FetchNorthFlow 北向资金（境外无可靠接口，返回 "--"）
 func (s *MarketService) FetchNorthFlow() string {
-	url := "https://push2.eastmoney.com/api/qt/kamtbs.wss?fields1=f1,f2,f3,f4&fields2=f51,f52,f53,f54,f55,f56"
-
-	resp, err := s.client.Get(url)
-	if err != nil {
-		return "--"
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-
-	var result struct {
-		Data struct {
-			S2N struct {
-				F52 float64 `json:"f52"` // 沪股通净流入
-				F54 float64 `json:"f54"` // 深股通净流入
-			} `json:"s2n"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(body, &result); err != nil {
-		return "--"
-	}
-
-	total := result.Data.S2N.F52 + result.Data.S2N.F54
-	if total >= 0 {
-		return fmt.Sprintf("+%.1f亿", total)
-	}
-	return fmt.Sprintf("%.1f亿", total)
+	return "--"
 }
 
 func parseSinaFloat(s string) float64 {
-	f, _ := strconv.ParseFloat(s, 64)
+	f, _ := strconv.ParseFloat(strings.TrimSpace(s), 64)
 	return f
 }
 
@@ -416,20 +327,23 @@ func GetIndexOptions() []IndexOption {
 	}
 }
 
-// FetchIndexHistory 从东方财富获取指数历史K线
+// FetchIndexHistory 从 Yahoo Finance 获取指数历史K线
+// Yahoo Finance 境外可正常访问
 func (s *MarketService) FetchIndexHistory(code string, days int) ([]KLineData, error) {
 	cacheKey := fmt.Sprintf("index_history_%s_%d", code, days)
 	if cached := s.getCache(cacheKey); cached != nil {
 		return cached.([]KLineData), nil
 	}
 
-	// 用 beg 参数按日期范围限制，避免拉取全量数据导致超时
-	// 多取 60 天以覆盖节假日、停牌等非交易日
-	beg := time.Now().AddDate(0, 0, -(days + 60)).Format("20060102")
+	yahooSymbol := eastmoneyToYahooCode(code)
+
+	// 将交易天数换算为日历天数范围（交易日约为日历日的 70%，多加缓冲）
+	calDays := int(float64(days)*1.5) + 30
+	rangeStr := fmt.Sprintf("%dd", calDays)
 
 	apiURL := fmt.Sprintf(
-		"https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%s&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=1&beg=%s&end=20500101",
-		code, beg,
+		"https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&range=%s",
+		yahooSymbol, rangeStr,
 	)
 
 	req, err := http.NewRequest("GET", apiURL, nil)
@@ -437,11 +351,10 @@ func (s *MarketService) FetchIndexHistory(code string, days int) ([]KLineData, e
 		return nil, fmt.Errorf("build request failed: %w", err)
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-	req.Header.Set("Referer", "https://quote.eastmoney.com/")
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch index history failed: %w", err)
+		return nil, fmt.Errorf("fetch yahoo history failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -450,32 +363,60 @@ func (s *MarketService) FetchIndexHistory(code string, days int) ([]KLineData, e
 		return nil, fmt.Errorf("read response body failed: %w", err)
 	}
 
+	// Yahoo Finance v8 chart 响应结构
 	var result struct {
-		Data *struct {
-			Klines []string `json:"klines"`
-		} `json:"data"`
+		Chart struct {
+			Result []struct {
+				Timestamps []int64 `json:"timestamp"`
+				Indicators struct {
+					Quote []struct {
+						Open  []float64 `json:"open"`
+						Close []float64 `json:"close"`
+						High  []float64 `json:"high"`
+						Low   []float64 `json:"low"`
+					} `json:"quote"`
+				} `json:"indicators"`
+			} `json:"result"`
+			Error *struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		} `json:"chart"`
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("parse index history failed: %w", err)
+		return nil, fmt.Errorf("parse yahoo history failed: %w", err)
 	}
-
-	if result.Data == nil || len(result.Data.Klines) == 0 {
+	if result.Chart.Error != nil {
+		return nil, fmt.Errorf("yahoo error: %s", result.Chart.Error.Code)
+	}
+	if len(result.Chart.Result) == 0 {
 		return []KLineData{}, nil
 	}
 
+	res := result.Chart.Result[0]
+	if len(res.Indicators.Quote) == 0 {
+		return []KLineData{}, nil
+	}
+
+	quotes := res.Indicators.Quote[0]
+	timestamps := res.Timestamps
+
 	var klines []KLineData
-	for _, line := range result.Data.Klines {
-		parts := strings.Split(line, ",")
-		if len(parts) < 5 {
+	for i, ts := range timestamps {
+		if i >= len(quotes.Close) || i >= len(quotes.Open) || i >= len(quotes.High) || i >= len(quotes.Low) {
+			break
+		}
+		// Yahoo 有时会在数组中插入 NaN（用 0 表示），跳过无效数据
+		if quotes.Close[i] == 0 || math.IsNaN(quotes.Close[i]) {
 			continue
 		}
+		date := time.Unix(ts, 0).UTC().Format("2006-01-02")
 		klines = append(klines, KLineData{
-			Date:  parts[0],
-			Open:  parseSinaFloat(parts[1]),
-			Close: parseSinaFloat(parts[2]),
-			High:  parseSinaFloat(parts[3]),
-			Low:   parseSinaFloat(parts[4]),
+			Date:  date,
+			Open:  math.Round(quotes.Open[i]*100) / 100,
+			Close: math.Round(quotes.Close[i]*100) / 100,
+			High:  math.Round(quotes.High[i]*100) / 100,
+			Low:   math.Round(quotes.Low[i]*100) / 100,
 		})
 	}
 
