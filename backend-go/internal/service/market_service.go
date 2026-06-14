@@ -388,3 +388,82 @@ func formatVolume(val float64) string {
 	}
 	return fmt.Sprintf("%.0f万手", val/1e4)
 }
+
+// KLineData K线数据
+type KLineData struct {
+	Date  string  `json:"date"`
+	Open  float64 `json:"open"`
+	Close float64 `json:"close"`
+	High  float64 `json:"high"`
+	Low   float64 `json:"low"`
+}
+
+// IndexOption 指数选项
+type IndexOption struct {
+	Name string `json:"name"`
+	Code string `json:"code"`
+}
+
+// GetIndexOptions 返回可选指数列表
+func GetIndexOptions() []IndexOption {
+	return []IndexOption{
+		{Name: "上证指数", Code: "1.000001"},
+		{Name: "深证成指", Code: "0.399001"},
+		{Name: "创业板指", Code: "0.399006"},
+		{Name: "沪深300", Code: "1.000300"},
+		{Name: "中证500", Code: "1.000905"},
+		{Name: "中证1000", Code: "1.000852"},
+	}
+}
+
+// FetchIndexHistory 从东方财富获取指数历史K线
+func (s *MarketService) FetchIndexHistory(code string, days int) ([]KLineData, error) {
+	cacheKey := fmt.Sprintf("index_history_%s_%d", code, days)
+	if cached := s.getCache(cacheKey); cached != nil {
+		return cached.([]KLineData), nil
+	}
+
+	url := fmt.Sprintf(
+		"https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%s&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=1&beg=0&end=20500101&lmt=%d",
+		code, days,
+	)
+
+	resp, err := s.client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("fetch index history failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	var result struct {
+		Data struct {
+			Klines []string `json:"klines"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parse index history failed: %w", err)
+	}
+
+	var klines []KLineData
+	for _, line := range result.Data.Klines {
+		parts := strings.Split(line, ",")
+		if len(parts) < 5 {
+			continue
+		}
+		klines = append(klines, KLineData{
+			Date:  parts[0],
+			Open:  parseSinaFloat(parts[1]),
+			Close: parseSinaFloat(parts[2]),
+			High:  parseSinaFloat(parts[3]),
+			Low:   parseSinaFloat(parts[4]),
+		})
+	}
+
+	if len(klines) > 0 {
+		s.setCache(cacheKey, klines, 5*time.Minute)
+	}
+
+	return klines, nil
+}

@@ -91,3 +91,27 @@ func (c *MarketController) GetOverview(ctx *gin.Context) {
 
 	response.OK(ctx, stats)
 }
+
+// GetIndexOptions GET /api/v1/market/index-options
+// 获取可选指数列表
+func (c *MarketController) GetIndexOptions(ctx *gin.Context) {
+	response.OK(ctx, service.GetIndexOptions())
+}
+
+// GetIndexHistory GET /api/v1/market/history
+// 获取指数历史K线
+func (c *MarketController) GetIndexHistory(ctx *gin.Context) {
+	code := ctx.DefaultQuery("code", "1.000300")
+	days := 120
+
+	log.Printf("[MarketController] GET /api/v1/market/history?code=%s&days=%d", code, days)
+
+	data, err := c.svc.FetchIndexHistory(code, days)
+	if err != nil {
+		log.Printf("[MarketController] 获取历史K线失败: %v", err)
+		response.Fail(ctx, http.StatusInternalServerError, 50005, "获取历史K线失败")
+		return
+	}
+
+	response.OK(ctx, data)
+}

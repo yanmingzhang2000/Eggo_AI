@@ -56,6 +56,8 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 			market.GET("/sectors", marketCtrl.GetSectors)
 			market.GET("/concepts", marketCtrl.GetConcepts)
 			market.GET("/overview", marketCtrl.GetOverview)
+			market.GET("/index-options", marketCtrl.GetIndexOptions)
+			market.GET("/history", marketCtrl.GetIndexHistory)
 		}
 	}
 
