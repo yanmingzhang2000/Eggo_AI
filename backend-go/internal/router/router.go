@@ -5,6 +5,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/jishengdan/backend-go/internal/controller"
+	"github.com/jishengdan/backend-go/internal/middleware"
 	"github.com/jishengdan/backend-go/internal/repository"
 	"github.com/jishengdan/backend-go/internal/service"
 )
@@ -14,6 +15,7 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
+	r.Use(middleware.CORSMiddleware())
 
 	// ── 依赖注入 ──────────────────────────────────────────────
 	// Repository 层
