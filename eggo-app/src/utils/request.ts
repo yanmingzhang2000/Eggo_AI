@@ -41,4 +41,39 @@ export function post<T>(url: string, data?: Record<string, unknown>): Promise<Ap
   return api.post(url, data)
 }
 
+// ─── 客户端缓存（localStorage，TTL 5 分钟）────────────────────────────────
+const CACHE_TTL = 5 * 60 * 1000 // 5 分钟
+
+interface CacheEntry<T> {
+  data: T
+  ts: number
+}
+
+function cacheKey(url: string, params?: Record<string, unknown>): string {
+  return 'mkt_cache:' + url + (params ? JSON.stringify(params) : '')
+}
+
+/** 读取缓存，过期返回 null */
+export function getCache<T>(url: string, params?: Record<string, unknown>): T | null {
+  try {
+    const raw = localStorage.getItem(cacheKey(url, params))
+    if (!raw) return null
+    const entry: CacheEntry<T> = JSON.parse(raw)
+    if (Date.now() - entry.ts > CACHE_TTL) return null
+    return entry.data
+  } catch {
+    return null
+  }
+}
+
+/** 写入缓存 */
+export function setCache<T>(url: string, data: T, params?: Record<string, unknown>): void {
+  try {
+    const entry: CacheEntry<T> = { data, ts: Date.now() }
+    localStorage.setItem(cacheKey(url, params), JSON.stringify(entry))
+  } catch {
+    // localStorage 满了就跳过
+  }
+}
+
 export default api

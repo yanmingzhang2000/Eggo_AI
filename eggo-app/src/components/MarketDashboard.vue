@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { get } from '@/utils/request'
+import { get, getCache, setCache } from '@/utils/request'
 import HistoryTrend from './HistoryTrend.vue'
 
 interface IndexData {
@@ -54,11 +54,16 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 const showHistory = ref(false)
 
+// 先读缓存立即展示，再后台静默拉新数据
 async function fetchIndices() {
+  const cached = getCache<IndexData[]>('/market/indices')
+  if (cached) indices.value = cached
+
   try {
     const res = await get<IndexData[]>('/market/indices')
     if (res.code === 0 && res.data) {
       indices.value = res.data
+      setCache('/market/indices', res.data)
     }
   } catch (err) {
     console.error('Failed to fetch indices:', err)
@@ -66,10 +71,14 @@ async function fetchIndices() {
 }
 
 async function fetchSectors() {
+  const cached = getCache<SectorData[]>('/market/sectors')
+  if (cached) sectors.value = cached
+
   try {
     const res = await get<SectorData[]>('/market/sectors')
     if (res.code === 0 && res.data) {
       sectors.value = res.data
+      setCache('/market/sectors', res.data)
     }
   } catch (err) {
     console.error('Failed to fetch sectors:', err)
@@ -77,10 +86,14 @@ async function fetchSectors() {
 }
 
 async function fetchConcepts() {
+  const cached = getCache<SectorData[]>('/market/concepts')
+  if (cached) concepts.value = cached
+
   try {
     const res = await get<SectorData[]>('/market/concepts')
     if (res.code === 0 && res.data) {
       concepts.value = res.data
+      setCache('/market/concepts', res.data)
     }
   } catch (err) {
     console.error('Failed to fetch concepts:', err)
@@ -88,10 +101,14 @@ async function fetchConcepts() {
 }
 
 async function fetchOverview() {
+  const cached = getCache<MarketStats>('/market/overview')
+  if (cached) marketStats.value = cached
+
   try {
     const res = await get<MarketStats>('/market/overview')
     if (res.code === 0 && res.data) {
       marketStats.value = res.data
+      setCache('/market/overview', res.data)
     }
   } catch (err) {
     console.error('Failed to fetch overview:', err)
@@ -99,7 +116,9 @@ async function fetchOverview() {
 }
 
 async function fetchAll() {
-  loading.value = true
+  // 有缓存时不显示全局 loading，只在后台刷新
+  const hasCache = !!getCache('/market/indices')
+  if (!hasCache) loading.value = true
   await Promise.all([fetchIndices(), fetchSectors(), fetchConcepts(), fetchOverview()])
   loading.value = false
 }
