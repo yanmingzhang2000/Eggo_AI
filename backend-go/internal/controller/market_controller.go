@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -115,6 +116,43 @@ func (c *MarketController) GetIndexHistory(ctx *gin.Context) {
 	if err != nil {
 		log.Printf("[MarketController] 获取历史K线失败: %v", err)
 		response.Fail(ctx, http.StatusInternalServerError, 50005, "获取历史K线失败")
+		return
+	}
+
+	response.OK(ctx, data)
+}
+
+// GetFundDistribution GET /api/v1/market/fund-distribution
+// 获取全市场基金当日涨跌分布
+func (c *MarketController) GetFundDistribution(ctx *gin.Context) {
+	log.Printf("[MarketController] GET /api/v1/market/fund-distribution")
+
+	data, err := c.svc.FetchFundDistribution()
+	if err != nil {
+		log.Printf("[MarketController] 获取基金涨跌分布失败: %v", err)
+		response.Fail(ctx, http.StatusInternalServerError, 50006, "获取基金涨跌分布失败")
+		return
+	}
+
+	response.OK(ctx, data)
+}
+
+// GetFundQuotes GET /api/v1/market/fund-quotes?codes=110011,161725
+// 批量获取基金实时估值
+func (c *MarketController) GetFundQuotes(ctx *gin.Context) {
+	codesStr := ctx.Query("codes")
+	if codesStr == "" {
+		response.OK(ctx, []service.FundQuote{})
+		return
+	}
+
+	codes := strings.Split(codesStr, ",")
+	log.Printf("[MarketController] GET /api/v1/market/fund-quotes codes=%v", codes)
+
+	data, err := c.svc.FetchFundQuotes(codes)
+	if err != nil {
+		log.Printf("[MarketController] 获取基金估值失败: %v", err)
+		response.Fail(ctx, http.StatusInternalServerError, 50007, "获取基金估值失败")
 		return
 	}
 

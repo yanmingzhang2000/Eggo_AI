@@ -431,3 +431,224 @@ func (s *MarketService) FetchIndexHistory(code string, days int) ([]KLineData, e
 
 	return klines, nil
 }
+
+// ─── 基金涨跌分布 ──────────────────────────────────────────────────────────────
+
+// FundDistribution 全市场基金涨跌分布统计
+type FundDistribution struct {
+	RiseCount  int     `json:"riseCount"`  // 上涨只数
+	FallCount  int     `json:"fallCount"`  // 下跌只数
+	FlatCount  int     `json:"flatCount"`  // 持平只数
+	Total      int     `json:"total"`      // 样本总数
+	AvgReturn  float64 `json:"avgReturn"`  // 平均涨幅 %
+	TopFunds   []FundQuote `json:"topFunds"`   // 涨幅 Top5
+	FlopFunds  []FundQuote `json:"flopFunds"`  // 跌幅 Top5
+	UpdateAt   string  `json:"updateAt"`
+}
+
+// FundQuote 基金实时估值
+type FundQuote struct {
+	Code       string  `json:"code"`
+	Name       string  `json:"name"`
+	EstReturn  float64 `json:"estReturn"`  // 今日估算涨跌幅 %
+	EstNav     float64 `json:"estNav"`     // 估算净值
+	LastNav    float64 `json:"lastNav"`    // 昨日净值
+	UpdateTime string  `json:"updateTime"`
+}
+
+// FetchFundDistribution 从天天基金获取全市场基金当日涨跌分布
+// 拉取当日涨幅榜和跌幅榜各100只，统计分布
+func (s *MarketService) FetchFundDistribution() (*FundDistribution, error) {
+	cacheKey := "fund_distribution"
+	if cached := s.getCache(cacheKey); cached != nil {
+		return cached.(*FundDistribution), nil
+	}
+
+	today := time.Now().Format("2006-01-02")
+
+	// 拉取涨幅榜 Top100
+	riseURL := fmt.Sprintf(
+		"https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=rzdf&st=desc&sd=%s&ed=%s&qdii=&tabSubtype=,,,,,&pi=1&pn=100&dx=1",
+		today, today,
+	)
+	riseData, err := s.fetchEastmoneyRank(riseURL)
+	if err != nil {
+		return nil, fmt.Errorf("fetch rise rank failed: %w", err)
+	}
+
+	// 拉取跌幅榜 Top100（按涨幅升序）
+	fallURL := fmt.Sprintf(
+		"https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=rzdf&st=asc&sd=%s&ed=%s&qdii=&tabSubtype=,,,,,&pi=1&pn=100&dx=1",
+		today, today,
+	)
+	fallData, err := s.fetchEastmoneyRank(fallURL)
+	if err != nil {
+		return nil, fmt.Errorf("fetch fall rank failed: %w", err)
+	}
+
+	dist := &FundDistribution{
+		UpdateAt: time.Now().Format("2006-01-02 15:04:05"),
+	}
+
+	// 用涨幅榜统计涨跌分布（取样200只）
+	allFunds := append(riseData, fallData...)
+	seen := map[string]bool{}
+	var sumReturn float64
+	for _, f := range allFunds {
+		if seen[f.Code] {
+			continue
+		}
+		seen[f.Code] = true
+		dist.Total++
+		sumReturn += f.EstReturn
+		if f.EstReturn > 0.01 {
+			dist.RiseCount++
+		} else if f.EstReturn < -0.01 {
+			dist.FallCount++
+		} else {
+			dist.FlatCount++
+		}
+	}
+	if dist.Total > 0 {
+		dist.AvgReturn = math.Round(sumReturn/float64(dist.Total)*100) / 100
+	}
+
+	// Top5 涨幅（riseData 已降序）
+	for i, f := range riseData {
+		if i >= 5 {
+			break
+		}
+		dist.TopFunds = append(dist.TopFunds, f)
+	}
+	// Top5 跌幅（fallData 已升序，取前5即跌幅最大）
+	for i, f := range fallData {
+		if i >= 5 {
+			break
+		}
+		dist.FlopFunds = append(dist.FlopFunds, f)
+	}
+
+	s.setCache(cacheKey, dist, 3*time.Minute)
+	return dist, nil
+}
+
+// fetchEastmoneyRank 解析天天基金排行榜接口
+// 字段顺序（0-indexed）：0=code, 1=name, 2=pinyin, 3=date, 4=unit_nav, 5=acc_nav, 6=daily_return, ...
+func (s *MarketService) fetchEastmoneyRank(apiURL string) ([]FundQuote, error) {
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Referer", "https://fund.eastmoney.com/fund.html")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	content := string(body)
+
+	// 响应格式：var rankData = {datas:["code,name,...","code,name,..."],allRecords:N,...}
+	// 提取 datas 数组内容
+	start := strings.Index(content, `"`)
+	end := strings.LastIndex(content, `"`)
+	if start < 0 || end <= start {
+		return nil, fmt.Errorf("unexpected rankhandler response")
+	}
+	inner := content[start+1 : end]
+	items := strings.Split(inner, `","`)
+
+	var quotes []FundQuote
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		// 字段：0=代码,1=名称,2=拼音,3=日期,4=单位净值,5=累计净值,6=日涨跌%,...
+		parts := strings.Split(item, ",")
+		if len(parts) < 7 {
+			continue
+		}
+		code := parts[0]
+		name := parts[1]
+		lastNav := parseSinaFloat(parts[4])
+		dailyReturn := parseSinaFloat(parts[6])
+		if code == "" || name == "" {
+			continue
+		}
+		quotes = append(quotes, FundQuote{
+			Code:       code,
+			Name:       name,
+			EstReturn:  dailyReturn,
+			LastNav:    lastNav,
+			UpdateTime: parts[3],
+		})
+	}
+	return quotes, nil
+}
+
+// FetchFundQuotes 批量获取指定基金代码的实时估值（天天基金 fundgz 接口）
+func (s *MarketService) FetchFundQuotes(codes []string) ([]FundQuote, error) {
+	if len(codes) == 0 {
+		return []FundQuote{}, nil
+	}
+
+	var results []FundQuote
+	for _, code := range codes {
+		cacheKey := "fundgz_" + code
+		if cached := s.getCache(cacheKey); cached != nil {
+			results = append(results, cached.(FundQuote))
+			continue
+		}
+
+		apiURL := fmt.Sprintf("https://fundgz.1234567.com.cn/js/%s.js?rt=%d", code, time.Now().Unix())
+		req, _ := http.NewRequest("GET", apiURL, nil)
+		req.Header.Set("Referer", "https://fund.eastmoney.com/")
+		req.Header.Set("User-Agent", "Mozilla/5.0")
+
+		resp, err := s.client.Do(req)
+		if err != nil {
+			continue
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		// 格式：jsonpgz({"fundcode":"003095","name":"...","jzrq":"2026-06-11","dwjz":"1.5353","gsz":"1.5661","gszzl":"2.01","gztime":"2026-06-12 15:00"});
+		content := string(body)
+		jsonStart := strings.Index(content, "(")
+		jsonEnd := strings.LastIndex(content, ")")
+		if jsonStart < 0 || jsonEnd <= jsonStart {
+			continue
+		}
+		jsonStr := content[jsonStart+1 : jsonEnd]
+
+		var raw struct {
+			Fundcode string `json:"fundcode"`
+			Name     string `json:"name"`
+			Jzrq     string `json:"jzrq"`   // 净值日期
+			Dwjz     string `json:"dwjz"`   // 单位净值
+			Gsz      string `json:"gsz"`    // 估算净值
+			Gszzl    string `json:"gszzl"`  // 估算涨跌幅 %
+			Gztime   string `json:"gztime"` // 估值时间
+		}
+		if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
+			continue
+		}
+
+		q := FundQuote{
+			Code:       raw.Fundcode,
+			Name:       raw.Name,
+			EstReturn:  parseSinaFloat(raw.Gszzl),
+			EstNav:     parseSinaFloat(raw.Gsz),
+			LastNav:    parseSinaFloat(raw.Dwjz),
+			UpdateTime: raw.Gztime,
+		}
+		s.setCache(cacheKey, q, 3*time.Minute)
+		results = append(results, q)
+	}
+
+	return results, nil
+}
