@@ -4,6 +4,7 @@ import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [vue()],
+  base: process.env.GITHUB_ACTIONS ? '/Eggo_AI/' : '/',
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
