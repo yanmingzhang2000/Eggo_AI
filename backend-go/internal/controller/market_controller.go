@@ -27,12 +27,12 @@ func (c *MarketController) GetIndices(ctx *gin.Context) {
 	log.Printf("[MarketController] GET /api/v1/market/indices")
 
 	codes := []string{
-		"sh000001",  // 上证指数
-		"sz399001",  // 深证成指
-		"sz399006",  // 创业板指
-		"sh000300",  // 沪深300
-		"sh000905",  // 中证500
-		"sh000852",  // 中证1000
+		"1.000001",  // 上证指数
+		"0.399001",  // 深证成指
+		"0.399006",  // 创业板指
+		"1.000300",  // 沪深300
+		"1.000905",  // 中证500
+		"1.000852",  // 中证1000
 	}
 
 	data, err := c.svc.FetchSinaIndex(codes)
