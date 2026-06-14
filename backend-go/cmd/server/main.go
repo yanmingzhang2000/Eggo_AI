@@ -37,8 +37,8 @@ func loadConfig() *config.Config {
 	// TODO: 从环境变量或配置文件加载
 	return &config.Config{
 		Server: config.ServerConfig{
-			Port: 8080,
-			Mode: "debug",
+			Port: getEnvAsInt("PORT", 8080),
+			Mode: getEnv("GIN_MODE", "debug"),
 		},
 		Database: config.DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
@@ -66,12 +66,14 @@ func initDB(cfg *config.Config) *gorm.DB {
 		})
 	} else {
 		// 使用独立环境变量构建 DSN
-		dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=Asia/Shanghai",
+		sslMode := getEnv("DB_SSLMODE", "disable")
+		dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=%s TimeZone=Asia/Shanghai",
 			cfg.Database.Host,
 			cfg.Database.User,
 			cfg.Database.Password,
 			cfg.Database.DBName,
 			cfg.Database.Port,
+			sslMode,
 		)
 		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 			Logger: logger.Default.LogMode(logger.Info),
@@ -90,6 +92,17 @@ func initDB(cfg *config.Config) *gorm.DB {
 func getEnv(key, defaultVal string) string {
 	if val := os.Getenv(key); val != "" {
 		return val
+	}
+	return defaultVal
+}
+
+// getEnvAsInt 获取环境变量（整数），带默认值
+func getEnvAsInt(key string, defaultVal int) int {
+	if val := os.Getenv(key); val != "" {
+		var i int
+		if _, err := fmt.Sscanf(val, "%d", &i); err == nil {
+			return i
+		}
 	}
 	return defaultVal
 }
