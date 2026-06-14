@@ -430,8 +430,8 @@ onUnmounted(() => {
 }
 
 .index-card:hover {
-  border-color: rgba(255, 215, 0, 0.5);   /* hover 金色高亮 */
-  box-shadow: 0 0 12px rgba(255, 215, 0, 0.12);
+  border-color: #f7ba1e;
+  box-shadow: 0 0 12px rgba(247, 186, 30, 0.15);
 }
 
 .index-card__top {
@@ -580,7 +580,7 @@ onUnmounted(() => {
 
 .empty-hint__sub {
   font-size: 12px;
-  color: rgba(255, 215, 0, 0.75); /* 金色强化提示 */
+  color: #f7ba1e; /* 金色提示，与 hover 色一致 */
 }
 
 /* ── 市场情绪面板 ── */
