@@ -165,7 +165,7 @@ function selectIndex(code: string) {
 
 function returnColor(val: number): string {
   if (val > 0) return '#ff4d4f'
-  if (val < 0) return '#00c3ff'
+  if (val < 0) return '#00b96b'
   return '#666'
 }
 
@@ -370,7 +370,7 @@ onUnmounted(() => {
           <div class="stat-card__label">涨停</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card__value" style="color: #00c3ff">{{ marketStats.limitDown }}</div>
+          <div class="stat-card__value" style="color: #00b96b">{{ marketStats.limitDown }}</div>
           <div class="stat-card__label">跌停</div>
         </div>
       </div>
@@ -378,7 +378,7 @@ onUnmounted(() => {
       <div class="stats-detail">
         <div class="detail-row">
           <span class="detail-label">北向资金</span>
-          <span class="detail-value" :style="{ color: marketStats.northFlow?.startsWith('+') ? '#ff4d4f' : '#00c3ff' }">{{ marketStats.northFlow || '--' }}</span>
+          <span class="detail-value" :style="{ color: marketStats.northFlow?.startsWith('+') ? '#ff4d4f' : '#00b96b' }">{{ marketStats.northFlow || '--' }}</span>
         </div>
         <div class="detail-row">
           <span class="detail-label">市场情绪</span>
@@ -452,7 +452,7 @@ onUnmounted(() => {
               <path
                 :d="generateChartPath(klineData)"
                 fill="none"
-                :stroke="isChartUp(klineData) ? '#ff4d4f' : '#00c3ff'"
+                :stroke="isChartUp(klineData) ? '#ff4d4f' : '#00b96b'"
                 stroke-width="2"
                 stroke-linejoin="round"
               />
@@ -460,8 +460,8 @@ onUnmounted(() => {
               <!-- 渐变填充 -->
               <defs>
                 <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" :stop-color="isChartUp(klineData) ? '#ff4d4f' : '#00c3ff'" stop-opacity="0.3" />
-                  <stop offset="100%" :stop-color="isChartUp(klineData) ? '#ff4d4f' : '#00c3ff'" stop-opacity="0" />
+                  <stop offset="0%" :stop-color="isChartUp(klineData) ? '#ff4d4f' : '#00b96b'" stop-opacity="0.3" />
+                  <stop offset="100%" :stop-color="isChartUp(klineData) ? '#ff4d4f' : '#00b96b'" stop-opacity="0" />
                 </linearGradient>
               </defs>
               <path
@@ -487,7 +487,7 @@ onUnmounted(() => {
               &nbsp;|&nbsp;起点 {{ klineData[0].close.toFixed(2) }}
               &nbsp;→&nbsp;终点 {{ klineData[klineData.length - 1].close.toFixed(2) }}
               &nbsp;
-              <span :style="{ color: isChartUp(klineData) ? '#ff4d4f' : '#00c3ff' }">
+              <span :style="{ color: isChartUp(klineData) ? '#ff4d4f' : '#00b96b' }">
                 ({{ isChartUp(klineData) ? '+' : '' }}{{ ((klineData[klineData.length - 1].close - klineData[0].close) / klineData[0].close * 100).toFixed(2) }}%)
               </span>
             </span>
@@ -766,7 +766,7 @@ onUnmounted(() => {
 }
 
 .stat-card--up .stat-card__value { color: #ff4d4f; }
-.stat-card--down .stat-card__value { color: #00c3ff; }
+.stat-card--down .stat-card__value { color: #00b96b; }
 .stat-card--flat .stat-card__value { color: #666; }
 
 .stat-card__label {
@@ -831,7 +831,7 @@ onUnmounted(() => {
 
 .bar-segment--up { background: #ff4d4f; }
 .bar-segment--flat { background: #666; }
-.bar-segment--down { background: #00c3ff; }
+.bar-segment--down { background: #00b96b; }
 
 .bar-legend {
   display: flex;
@@ -851,7 +851,7 @@ onUnmounted(() => {
 
 .dot--up { background: #ff4d4f; }
 .dot--flat { background: #666; }
-.dot--down { background: #00c3ff; }
+.dot--down { background: #00b96b; }
 
 @media (max-width: 480px) {
   .indices-grid {
