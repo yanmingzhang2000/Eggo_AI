@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { get } from '@/utils/request'
+import HistoryTrend from './HistoryTrend.vue'
 
 interface IndexData {
   name: string
@@ -32,19 +33,6 @@ interface MarketStats {
   updateAt: string
 }
 
-interface KLineData {
-  date: string
-  open: number
-  close: number
-  high: number
-  low: number
-}
-
-interface IndexOption {
-  name: string
-  code: string
-}
-
 const indices = ref<IndexData[]>([])
 const sectors = ref<SectorData[]>([])
 const concepts = ref<SectorData[]>([])
@@ -64,12 +52,7 @@ const loading = ref(true)
 const activeTab = ref<'index' | 'sector' | 'concept' | 'stats'>('index')
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
-// 历史趋势相关
 const showHistory = ref(false)
-const historyLoading = ref(false)
-const indexOptions = ref<IndexOption[]>([])
-const selectedCode = ref('1.000300')
-const klineData = ref<KLineData[]>([])
 
 async function fetchIndices() {
   try {
@@ -121,48 +104,6 @@ async function fetchAll() {
   loading.value = false
 }
 
-async function fetchIndexOptions() {
-  try {
-    const res = await get<IndexOption[]>('/market/index-options')
-    if (res.code === 0 && res.data) {
-      indexOptions.value = res.data
-    }
-  } catch (err) {
-    console.error('Failed to fetch index options:', err)
-  }
-}
-
-async function fetchHistory() {
-  historyLoading.value = true
-  try {
-    const res = await get<KLineData[]>('/market/history', { code: selectedCode.value, days: 120 })
-    if (res.code === 0 && res.data) {
-      klineData.value = res.data
-    }
-  } catch (err) {
-    console.error('Failed to fetch history:', err)
-  } finally {
-    historyLoading.value = false
-  }
-}
-
-function openHistory() {
-  showHistory.value = true
-  if (indexOptions.value.length === 0) {
-    fetchIndexOptions()
-  }
-  fetchHistory()
-}
-
-function closeHistory() {
-  showHistory.value = false
-}
-
-function selectIndex(code: string) {
-  selectedCode.value = code
-  fetchHistory()
-}
-
 function returnColor(val: number): string {
   if (val > 0) return '#ff4d4f'
   if (val < 0) return '#00b96b'
@@ -175,102 +116,8 @@ function returnArrow(val: number): string {
   return '→'
 }
 
-// SVG 折线图生成（逐段变色）
-function generateChartPaths(data: KLineData[]): { up: string; down: string } {
-  if (data.length < 2) return { up: '', down: '' }
-  const closes = data.map(d => d.close)
-  const min = Math.min(...closes)
-  const max = Math.max(...closes)
-  const range = max - min || 1
-  const width = 460
-  const height = 200
-  const padding = { top: 20, bottom: 30, left: 50, right: 20 }
-  const chartW = width - padding.left - padding.right
-  const chartH = height - padding.top - padding.bottom
-
-  const points = closes.map((val, i) => {
-    const x = padding.left + (i / (closes.length - 1)) * chartW
-    const y = padding.top + chartH - ((val - min) / range) * chartH
-    return { x, y }
-  })
-
-  let upPath = ''
-  let downPath = ''
-
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1]
-    const curr = points[i]
-    const d = `M${prev.x},${prev.y} L${curr.x},${curr.y}`
-    if (closes[i] >= closes[i - 1]) {
-      upPath += (upPath ? ' ' : '') + d
-    } else {
-      downPath += (downPath ? ' ' : '') + d
-    }
-  }
-
-  return { up: upPath, down: downPath }
-}
-
-function generateChartFill(data: KLineData[]): string {
-  if (data.length < 2) return ''
-  const closes = data.map(d => d.close)
-  const min = Math.min(...closes)
-  const max = Math.max(...closes)
-  const range = max - min || 1
-  const width = 460
-  const height = 200
-  const padding = { top: 20, bottom: 30, left: 50, right: 20 }
-  const chartW = width - padding.left - padding.right
-  const chartH = height - padding.top - padding.bottom
-
-  const points = closes.map((val, i) => {
-    const x = padding.left + (i / (closes.length - 1)) * chartW
-    const y = padding.top + chartH - ((val - min) / range) * chartH
-    return `${x},${y}`
-  })
-
-  return `M${points.join(' L')} L${points[points.length - 1].split(',')[0]},${padding.top + chartH} L${points[0].split(',')[0]},${padding.top + chartH} Z`
-}
-
-function getChartYLabels(data: KLineData[]): { value: string; y: number }[] {
-  if (data.length < 2) return []
-  const closes = data.map(d => d.close)
-  const min = Math.min(...closes)
-  const max = Math.max(...closes)
-  const range = max - min || 1
-  const height = 200
-  const padding = { top: 20, bottom: 30 }
-  const chartH = height - padding.top - padding.bottom
-
-  const labels = []
-  for (let i = 0; i <= 4; i++) {
-    const val = min + (range * i) / 4
-    const y = padding.top + chartH - (i / 4) * chartH
-    labels.push({ value: val.toFixed(2), y })
-  }
-  return labels
-}
-
-function getChartXLabels(data: KLineData[]): { date: string; x: number }[] {
-  if (data.length < 2) return []
-  const width = 460
-  const padding = { left: 50, right: 20 }
-  const chartW = width - padding.left - padding.right
-  const step = Math.floor(data.length / 4)
-
-  const labels = []
-  for (let i = 0; i <= 4; i++) {
-    const idx = Math.min(i * step, data.length - 1)
-    const x = padding.left + (idx / (data.length - 1)) * chartW
-    const date = data[idx].date.slice(5) // MM-DD
-    labels.push({ date, x })
-  }
-  return labels
-}
-
 onMounted(() => {
   fetchAll()
-  // 每 60 秒自动刷新
   refreshTimer = setInterval(fetchAll, 60000)
 })
 
@@ -280,11 +127,15 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="dashboard">
+  <!-- 历史趋势全屏页 -->
+  <HistoryTrend v-if="showHistory" @back="showHistory = false" />
+
+  <!-- 大盘看板 -->
+  <section v-else class="dashboard">
     <div class="dashboard__header">
       <h2 class="dashboard__title">📈 大盘看板</h2>
       <div class="dashboard__right">
-        <button class="dashboard__history" @click="openHistory">看历史趋势</button>
+        <button class="dashboard__history" @click="showHistory = true">看历史趋势</button>
         <span v-if="loading" class="dashboard__loading">加载中...</span>
         <button class="dashboard__refresh" @click="fetchAll" :disabled="loading">
           <span :class="{ 'spin': loading }">↻</span>
@@ -435,107 +286,6 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
-
-    <!-- 历史趋势弹窗 -->
-    <Teleport to="body">
-      <div v-if="showHistory" class="modal-overlay" @click.self="closeHistory">
-        <div class="modal">
-          <div class="modal__header">
-            <h3 class="modal__title">历史趋势（近120个交易日）</h3>
-            <button class="modal__close" @click="closeHistory">✕</button>
-          </div>
-
-          <div class="modal__tabs">
-            <button
-              v-for="opt in indexOptions"
-              :key="opt.code"
-              :class="['modal__tab', { 'modal__tab--active': selectedCode === opt.code }]"
-              @click="selectIndex(opt.code)"
-            >{{ opt.name }}</button>
-          </div>
-
-          <div class="modal__chart">
-            <div v-if="historyLoading" class="chart-loading">加载中...</div>
-            <svg v-else viewBox="0 0 460 200" class="chart-svg">
-              <!-- Y 轴标签 -->
-              <text
-                v-for="(label, i) in getChartYLabels(klineData)"
-                :key="'y'+i"
-                :x="42"
-                :y="label.y + 4"
-                class="chart-label"
-                text-anchor="end"
-              >{{ label.value }}</text>
-
-              <!-- 网格线 -->
-              <line
-                v-for="(label, i) in getChartYLabels(klineData)"
-                :key="'g'+i"
-                :x1="50"
-                :x2="440"
-                :y1="label.y"
-                :y2="label.y"
-                class="chart-grid"
-              />
-
-              <!-- 渐变填充 -->
-              <defs>
-                <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#999" stop-opacity="0.2" />
-                  <stop offset="100%" stop-color="#999" stop-opacity="0" />
-                </linearGradient>
-              </defs>
-              <path
-                :d="generateChartFill(klineData)"
-                fill="url(#chartGrad)"
-              />
-
-              <!-- 涨（红） -->
-              <path
-                v-if="generateChartPaths(klineData).up"
-                :d="generateChartPaths(klineData).up"
-                fill="none"
-                stroke="#ff4d4f"
-                stroke-width="2"
-                stroke-linecap="round"
-              />
-
-              <!-- 跌（绿） -->
-              <path
-                v-if="generateChartPaths(klineData).down"
-                :d="generateChartPaths(klineData).down"
-                fill="none"
-                stroke="#00b96b"
-                stroke-width="2"
-                stroke-linecap="round"
-              />
-
-              <!-- X 轴标签 -->
-              <text
-                v-for="(label, i) in getChartXLabels(klineData)"
-                :key="'x'+i"
-                :x="label.x"
-                :y="192"
-                class="chart-label"
-                text-anchor="middle"
-              >{{ label.date }}</text>
-            </svg>
-          </div>
-
-          <div class="modal__footer">
-            <span v-if="klineData.length > 0" class="chart-info">
-              {{ klineData[0].date }} ~ {{ klineData[klineData.length - 1].date }}
-              &nbsp;|&nbsp;起点 {{ klineData[0].close.toFixed(2) }}
-              &nbsp;→&nbsp;终点 {{ klineData[klineData.length - 1].close.toFixed(2) }}
-              &nbsp;
-              <span :style="{ color: klineData[klineData.length - 1].close >= klineData[0].close ? '#ff4d4f' : '#00b96b' }">
-                ({{ klineData[klineData.length - 1].close >= klineData[0].close ? '+' : '' }}{{ ((klineData[klineData.length - 1].close - klineData[0].close) / klineData[0].close * 100).toFixed(2) }}%)
-              </span>
-            </span>
-          </div>
-        </div>
-      </div>
-    </Teleport>
   </section>
 </template>
 
@@ -569,6 +319,21 @@ onUnmounted(() => {
   color: var(--text-tertiary);
 }
 
+.dashboard__history {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  background: rgba(255, 215, 0, 0.1);
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dashboard__history:hover {
+  background: rgba(255, 215, 0, 0.2);
+}
+
 .dashboard__refresh {
   width: 28px;
   height: 28px;
@@ -591,21 +356,6 @@ onUnmounted(() => {
 .dashboard__refresh:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.dashboard__history {
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 215, 0, 0.3);
-  background: rgba(255, 215, 0, 0.1);
-  color: var(--accent);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.dashboard__history:hover {
-  background: rgba(255, 215, 0, 0.2);
 }
 
 .spin {
@@ -906,132 +656,5 @@ onUnmounted(() => {
   .stats-grid {
     grid-template-columns: repeat(3, 1fr);
   }
-
-  .modal {
-    width: 95%;
-    max-height: 85vh;
-  }
-}
-
-/* Modal */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-}
-
-.modal {
-  background: #1a1a2e;
-  border: 1px solid var(--border-color);
-  border-radius: 20px;
-  width: 520px;
-  max-width: 95vw;
-  max-height: 80vh;
-  overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-}
-
-.modal__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 24px 0;
-}
-
-.modal__title {
-  font-size: 16px;
-  color: var(--text-primary);
-  font-weight: 600;
-  margin: 0;
-}
-
-.modal__close {
-  width: 28px;
-  height: 28px;
-  background: rgba(255, 255, 255, 0.05);
-  border: none;
-  color: var(--text-tertiary);
-  border-radius: 50%;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.modal__close:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text-primary);
-}
-
-.modal__tabs {
-  display: flex;
-  gap: 6px;
-  padding: 16px 24px;
-  flex-wrap: wrap;
-}
-
-.modal__tab {
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: transparent;
-  color: var(--text-tertiary);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.modal__tab:hover {
-  color: var(--text-secondary);
-  border-color: rgba(255, 215, 0, 0.2);
-}
-
-.modal__tab--active {
-  background: rgba(255, 215, 0, 0.1);
-  border-color: rgba(255, 215, 0, 0.3);
-  color: var(--accent);
-}
-
-.modal__chart {
-  padding: 0 24px;
-  min-height: 220px;
-}
-
-.chart-loading {
-  text-align: center;
-  padding: 60px 0;
-  color: var(--text-tertiary);
-  font-size: 14px;
-}
-
-.chart-svg {
-  width: 100%;
-  height: auto;
-}
-
-.chart-label {
-  font-size: 9px;
-  fill: var(--text-tertiary);
-  font-family: var(--font-mono);
-}
-
-.chart-grid {
-  stroke: var(--border-color);
-  stroke-width: 0.5;
-  stroke-dasharray: 2,2;
-}
-
-.modal__footer {
-  padding: 16px 24px 20px;
-}
-
-.chart-info {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  font-family: var(--font-mono);
 }
 </style>
