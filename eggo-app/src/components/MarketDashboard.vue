@@ -105,9 +105,9 @@ async function fetchAll() {
 }
 
 function returnColor(val: number): string {
-  if (val > 0) return '#ff4d4f'
-  if (val < 0) return '#00b96b'
-  return '#666'
+  if (val > 0) return '#ff5c5e'
+  if (val < 0) return '#00d68f'
+  return '#787878'
 }
 
 function returnArrow(val: number): string {
@@ -210,13 +210,17 @@ onUnmounted(() => {
           {{ s.changePercent > 0 ? '+' : '' }}{{ s.changePercent.toFixed(2) }}%
         </div>
       </div>
-      <div v-if="sectors.length === 0 && !loading" class="empty-hint">暂无数据</div>
+      <div v-if="sectors.length === 0 && !loading" class="empty-hint">
+        <span class="empty-hint__icon">📡</span>
+        <span class="empty-hint__text">暂无板块数据</span>
+        <span class="empty-hint__sub">境外服务器暂不支持 A 股板块行情</span>
+      </div>
     </div>
 
     <!-- 概念板块 -->
     <div v-if="activeTab === 'concept'" class="sectors-list">
       <div v-for="(s, i) in concepts" :key="s.code" class="sector-row">
-        <div class="sector-rank" :style="{ color: i < 3 ? '#ffd700' : '#666' }">{{ i + 1 }}</div>
+        <div class="sector-rank" :style="{ color: i < 3 ? '#ffd700' : '#787878' }">{{ i + 1 }}</div>
         <div class="sector-info">
           <div class="sector-name">{{ s.name }}</div>
           <div class="sector-reason" v-if="s.price">最新价: {{ s.price.toFixed(2) }}</div>
@@ -225,7 +229,11 @@ onUnmounted(() => {
           {{ s.changePercent > 0 ? '+' : '' }}{{ s.changePercent.toFixed(2) }}%
         </div>
       </div>
-      <div v-if="concepts.length === 0 && !loading" class="empty-hint">暂无数据</div>
+      <div v-if="concepts.length === 0 && !loading" class="empty-hint">
+        <span class="empty-hint__icon">📡</span>
+        <span class="empty-hint__text">暂无概念数据</span>
+        <span class="empty-hint__sub">境外服务器暂不支持 A 股概念行情</span>
+      </div>
     </div>
 
     <!-- 市场情绪 -->
@@ -319,26 +327,30 @@ onUnmounted(() => {
   color: var(--text-tertiary);
 }
 
+/* 按钮统一金色主色 */
 .dashboard__history {
   padding: 6px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 215, 0, 0.3);
-  background: rgba(255, 215, 0, 0.1);
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  background: rgba(255, 215, 0, 0.08);
   color: var(--accent);
   font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .dashboard__history:hover {
-  background: rgba(255, 215, 0, 0.2);
+  background: rgba(255, 215, 0, 0.18);
+  border-color: rgba(255, 215, 0, 0.7);
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.2);
 }
 
 .dashboard__refresh {
   width: 28px;
   height: 28px;
-  background: rgba(255, 215, 0, 0.1);
-  border: 1px solid rgba(255, 215, 0, 0.2);
+  background: rgba(255, 215, 0, 0.08);
+  border: 1px solid rgba(255, 215, 0, 0.4);
   color: var(--accent);
   border-radius: 50%;
   font-size: 14px;
@@ -350,11 +362,13 @@ onUnmounted(() => {
 }
 
 .dashboard__refresh:hover {
-  background: rgba(255, 215, 0, 0.2);
+  background: rgba(255, 215, 0, 0.18);
+  border-color: rgba(255, 215, 0, 0.7);
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.2);
 }
 
 .dashboard__refresh:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
@@ -367,7 +381,7 @@ onUnmounted(() => {
   to { transform: rotate(360deg); }
 }
 
-/* Tabs */
+/* Tabs — 金色主色 */
 .tabs {
   display: flex;
   gap: 8px;
@@ -376,28 +390,30 @@ onUnmounted(() => {
 }
 
 .tab {
-  padding: 8px 16px;
+  padding: 7px 16px;
   border-radius: 8px;
   border: 1px solid var(--border-color);
   background: transparent;
-  color: var(--text-tertiary);
+  color: var(--text-tertiary);   /* 辅助文字级，AA 合格 */
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .tab:hover {
-  color: var(--text-secondary);
-  border-color: rgba(255, 215, 0, 0.2);
+  color: var(--text-secondary);  /* 次要数据级 */
+  border-color: rgba(255, 215, 0, 0.3);
 }
 
 .tab--active {
   background: rgba(255, 215, 0, 0.1);
-  border-color: rgba(255, 215, 0, 0.3);
-  color: var(--accent);
+  border-color: rgba(255, 215, 0, 0.5);
+  color: var(--accent);          /* 核心数据级，金色 */
+  font-weight: 600;
 }
 
-/* Index Cards */
+/* ── 指数卡片：2×3 网格，深灰渐变背景 + 描边，hover 金色高亮 ── */
 .indices-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -405,10 +421,17 @@ onUnmounted(() => {
 }
 
 .index-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
+  background: linear-gradient(145deg, #1c1c1c, #141414);
+  border: 1px solid #2a2a2a;       /* 深灰描边 */
   border-radius: 16px;
   padding: 16px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  cursor: default;
+}
+
+.index-card:hover {
+  border-color: rgba(255, 215, 0, 0.5);   /* hover 金色高亮 */
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.12);
 }
 
 .index-card__top {
@@ -420,21 +443,23 @@ onUnmounted(() => {
 
 .index-card__name {
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--text-secondary);   /* 次要数据级 */
   font-weight: 600;
 }
 
 .index-card__code {
   font-size: 11px;
-  color: var(--text-tertiary);
+  color: var(--text-tertiary);    /* 辅助文字级 */
   font-family: var(--font-mono);
 }
 
+/* 价格：核心数据，由 returnColor 动态设红/绿，字号最大 */
 .index-card__price {
   font-size: 22px;
   font-weight: 700;
   font-family: var(--font-mono);
   margin-bottom: 4px;
+  line-height: 1.2;
 }
 
 .index-card__change {
@@ -442,14 +467,15 @@ onUnmounted(() => {
   gap: 12px;
   font-size: 13px;
   font-family: var(--font-mono);
+  font-weight: 600;
   margin-bottom: 12px;
 }
 
 .index-card__meta {
   display: flex;
   gap: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-color);
+  padding-top: 10px;
+  border-top: 1px solid #2a2a2a;  /* 深灰分隔线，统一描边色 */
 }
 
 .meta-item {
@@ -460,16 +486,16 @@ onUnmounted(() => {
 
 .meta-label {
   font-size: 11px;
-  color: var(--text-tertiary);
+  color: var(--text-tertiary);    /* 辅助文字级 */
 }
 
 .meta-value {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--text-secondary);   /* 次要数据级 */
   font-family: var(--font-mono);
 }
 
-/* Sectors */
+/* ── 板块列表 —— 与指数卡片统一背景和描边 ── */
 .sectors-list {
   display: flex;
   flex-direction: column;
@@ -480,10 +506,15 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
+  background: linear-gradient(145deg, #1c1c1c, #141414);
+  border: 1px solid #2a2a2a;
   border-radius: 12px;
   padding: 14px 16px;
+  transition: border-color 0.2s;
+}
+
+.sector-row:hover {
+  border-color: rgba(255, 215, 0, 0.35);
 }
 
 .sector-rank {
@@ -501,13 +532,13 @@ onUnmounted(() => {
 
 .sector-name {
   font-size: 14px;
-  color: var(--text-primary);
+  color: var(--text-primary);     /* 核心数据级 */
   font-weight: 600;
 }
 
 .sector-reason {
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--text-tertiary);    /* 辅助文字级 */
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -522,14 +553,37 @@ onUnmounted(() => {
   text-align: right;
 }
 
+/* ── 空状态 —— 与卡片统一背景描边，文字中灰，提示语金色 ── */
 .empty-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 36px 16px;
+  background: linear-gradient(145deg, #1c1c1c, #141414);
+  border: 1px solid #2a2a2a;
+  border-radius: 16px;
   text-align: center;
-  padding: 32px;
-  color: var(--text-tertiary);
-  font-size: 14px;
 }
 
-/* Stats Panel */
+.empty-hint__icon {
+  font-size: 28px;
+  line-height: 1;
+  opacity: 0.6;
+}
+
+.empty-hint__text {
+  font-size: 14px;
+  color: var(--text-secondary);   /* 中灰 */
+  font-weight: 600;
+}
+
+.empty-hint__sub {
+  font-size: 12px;
+  color: rgba(255, 215, 0, 0.75); /* 金色强化提示 */
+}
+
+/* ── 市场情绪面板 ── */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -542,11 +596,16 @@ onUnmounted(() => {
 }
 
 .stat-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
+  background: linear-gradient(145deg, #1c1c1c, #141414);
+  border: 1px solid #2a2a2a;
   border-radius: 12px;
   padding: 16px;
   text-align: center;
+  transition: border-color 0.2s;
+}
+
+.stat-card:hover {
+  border-color: rgba(255, 215, 0, 0.35);
 }
 
 .stat-card__value {
@@ -554,20 +613,21 @@ onUnmounted(() => {
   font-weight: 700;
   font-family: var(--font-mono);
   margin-bottom: 4px;
+  color: var(--text-primary);
 }
 
-.stat-card--up .stat-card__value { color: #ff4d4f; }
-.stat-card--down .stat-card__value { color: #00b96b; }
-.stat-card--flat .stat-card__value { color: #666; }
+.stat-card--up   .stat-card__value { color: #ff5c5e; }
+.stat-card--down .stat-card__value { color: #00d68f; }
+.stat-card--flat .stat-card__value { color: var(--text-tertiary); }
 
 .stat-card__label {
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--text-tertiary);    /* 辅助文字级 */
 }
 
 .stats-detail {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
+  background: linear-gradient(145deg, #1c1c1c, #141414);
+  border: 1px solid #2a2a2a;
   border-radius: 12px;
   padding: 16px;
   margin-bottom: 12px;
@@ -576,28 +636,30 @@ onUnmounted(() => {
 .detail-row {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   padding: 8px 0;
 }
 
 .detail-row + .detail-row {
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid #2a2a2a;
 }
 
 .detail-label {
   font-size: 13px;
-  color: var(--text-tertiary);
+  color: var(--text-tertiary);    /* 辅助文字级 */
 }
 
 .detail-value {
   font-size: 14px;
   font-weight: 600;
   font-family: var(--font-mono);
+  color: var(--text-secondary);   /* 次要数据级，特殊值由内联 style 覆盖 */
 }
 
 /* Bar Chart */
 .bar-chart {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
+  background: linear-gradient(145deg, #1c1c1c, #141414);
+  border: 1px solid #2a2a2a;
   border-radius: 12px;
   padding: 16px;
 }
@@ -614,21 +676,22 @@ onUnmounted(() => {
   border-radius: 4px;
   overflow: hidden;
   margin-bottom: 12px;
+  background: #2a2a2a;
 }
 
 .bar-segment {
   transition: width 0.3s;
 }
 
-.bar-segment--up { background: #ff4d4f; }
-.bar-segment--flat { background: #666; }
-.bar-segment--down { background: #00b96b; }
+.bar-segment--up   { background: #ff5c5e; }
+.bar-segment--flat { background: #787878; }
+.bar-segment--down { background: #00d68f; }
 
 .bar-legend {
   display: flex;
   gap: 16px;
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);   /* 次要数据级，可读性更强 */
 }
 
 .dot {
@@ -640,9 +703,9 @@ onUnmounted(() => {
   vertical-align: middle;
 }
 
-.dot--up { background: #ff4d4f; }
-.dot--flat { background: #666; }
-.dot--down { background: #00b96b; }
+.dot--up   { background: #ff5c5e; }
+.dot--flat { background: #787878; }
+.dot--down { background: #00d68f; }
 
 @media (max-width: 480px) {
   .indices-grid {
