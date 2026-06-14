@@ -116,6 +116,19 @@ function returnArrow(val: number): string {
   return '→'
 }
 
+const BENCHMARK_MAP: Record<string, string> = {
+  '1.000001': '沪深主动基金常见参考基准',
+  '0.399001': '深市主动基金常见参考基准',
+  '0.399006': '创业板主题基金业绩基准',
+  '1.000300': '沪深300指数基金 / 大部分主动基金业绩基准',
+  '1.000905': '中证500指数基金 / 中小盘基金基准',
+  '1.000852': '中证1000指数基金 / 小盘基金基准',
+}
+
+function indexBenchmark(code: string): string {
+  return BENCHMARK_MAP[code] ?? ''
+}
+
 onMounted(() => {
   fetchAll()
   refreshTimer = setInterval(fetchAll, 60000)
@@ -195,6 +208,7 @@ onUnmounted(() => {
             <span class="meta-value">{{ idx.low.toFixed(2) }}</span>
           </div>
         </div>
+        <div class="index-card__benchmark">{{ indexBenchmark(idx.code) }}</div>
       </div>
     </div>
 
@@ -475,7 +489,15 @@ onUnmounted(() => {
   display: flex;
   gap: 12px;
   padding-top: 10px;
-  border-top: 1px solid #2a2a2a;  /* 深灰分隔线，统一描边色 */
+  border-top: 1px solid #2a2a2a;
+}
+
+.index-card__benchmark {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #f7ba1e;
+  opacity: 0.8;
+  line-height: 1.3;
 }
 
 .meta-item {
