@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { get } from '@/utils/request'
 
 interface IndexData {
   name: string
@@ -14,41 +15,91 @@ interface IndexData {
 
 interface SectorData {
   name: string
+  code: string
   changePercent: number
-  leader: string
-  reason: string
+  price: number
 }
 
-const indices = ref<IndexData[]>([
-  { name: '上证指数', code: '000001', price: 3387.52, change: 28.36, changePercent: 0.84, volume: '4823亿', high: 3395.18, low: 3362.41 },
-  { name: '深证成指', code: '399001', price: 10245.68, change: -45.23, changePercent: -0.44, volume: '5612亿', high: 10312.55, low: 10198.32 },
-  { name: '创业板指', code: '399006', price: 2078.33, change: 15.67, changePercent: 0.76, volume: '2341亿', high: 2089.44, low: 2058.12 },
-  { name: '沪深300', code: '000300', price: 3956.78, change: 12.45, changePercent: 0.32, volume: '3215亿', high: 3968.22, low: 3938.56 },
-  { name: '中证500', code: '000905', price: 6123.45, change: -38.92, changePercent: -0.63, volume: '1876亿', high: 6178.33, low: 6098.21 },
-  { name: '中证1000', code: '000852', price: 6534.21, change: 52.18, changePercent: 0.81, volume: '1543亿', high: 6558.44, low: 6478.33 },
-])
+interface MarketStats {
+  upCount: number
+  downCount: number
+  flatCount: number
+  limitUp: number
+  limitDown: number
+  totalVolume: string
+  northFlow: string
+  sentiment: string
+  updateAt: string
+}
 
-const sectors = ref<SectorData[]>([
-  { name: 'AI算力', changePercent: 3.28, leader: '中际旭创', reason: '海外大厂资本开支超预期' },
-  { name: '半导体', changePercent: 2.15, leader: '北方华创', reason: '国产替代加速' },
-  { name: '新能源车', changePercent: 1.87, leader: '比亚迪', reason: '5月销量数据亮眼' },
-  { name: '白酒', changePercent: -1.23, leader: '贵州茅台', reason: '消费复苏低于预期' },
-  { name: '医药', changePercent: -0.89, leader: '恒瑞医药', reason: '集采压力持续' },
-  { name: '银行', changePercent: 0.45, leader: '招商银行', reason: '高股息防御属性' },
-])
-
-const marketStats = ref({
-  upCount: 2856,
-  downCount: 1823,
-  flatCount: 345,
-  limitUp: 68,
-  limitDown: 12,
-  totalVolume: '1.23万亿',
-  northFlow: '+45.6亿',
-  sentiment: '偏多',
+const indices = ref<IndexData[]>([])
+const sectors = ref<SectorData[]>([])
+const concepts = ref<SectorData[]>([])
+const marketStats = ref<MarketStats>({
+  upCount: 0,
+  downCount: 0,
+  flatCount: 0,
+  limitUp: 0,
+  limitDown: 0,
+  totalVolume: '--',
+  northFlow: '--',
+  sentiment: '--',
+  updateAt: '--',
 })
 
-const activeTab = ref<'index' | 'sector' | 'stats'>('index')
+const loading = ref(true)
+const activeTab = ref<'index' | 'sector' | 'concept' | 'stats'>('index')
+let refreshTimer: ReturnType<typeof setInterval> | null = null
+
+async function fetchIndices() {
+  try {
+    const res = await get<IndexData[]>('/market/indices')
+    if (res.code === 0 && res.data) {
+      indices.value = res.data
+    }
+  } catch (err) {
+    console.error('Failed to fetch indices:', err)
+  }
+}
+
+async function fetchSectors() {
+  try {
+    const res = await get<SectorData[]>('/market/sectors')
+    if (res.code === 0 && res.data) {
+      sectors.value = res.data
+    }
+  } catch (err) {
+    console.error('Failed to fetch sectors:', err)
+  }
+}
+
+async function fetchConcepts() {
+  try {
+    const res = await get<SectorData[]>('/market/concepts')
+    if (res.code === 0 && res.data) {
+      concepts.value = res.data
+    }
+  } catch (err) {
+    console.error('Failed to fetch concepts:', err)
+  }
+}
+
+async function fetchOverview() {
+  try {
+    const res = await get<MarketStats>('/market/overview')
+    if (res.code === 0 && res.data) {
+      marketStats.value = res.data
+    }
+  } catch (err) {
+    console.error('Failed to fetch overview:', err)
+  }
+}
+
+async function fetchAll() {
+  loading.value = true
+  await Promise.all([fetchIndices(), fetchSectors(), fetchConcepts(), fetchOverview()])
+  loading.value = false
+}
 
 function returnColor(val: number): string {
   if (val > 0) return '#ff4d4f'
@@ -62,14 +113,27 @@ function returnArrow(val: number): string {
   return '→'
 }
 
-const updateTime = ref('2026-06-14 15:00:00')
+onMounted(() => {
+  fetchAll()
+  // 每 60 秒自动刷新
+  refreshTimer = setInterval(fetchAll, 60000)
+})
+
+onUnmounted(() => {
+  if (refreshTimer) clearInterval(refreshTimer)
+})
 </script>
 
 <template>
   <section class="dashboard">
     <div class="dashboard__header">
       <h2 class="dashboard__title">📈 大盘看板</h2>
-      <span class="dashboard__time">{{ updateTime }}</span>
+      <div class="dashboard__right">
+        <span v-if="loading" class="dashboard__loading">加载中...</span>
+        <button class="dashboard__refresh" @click="fetchAll" :disabled="loading">
+          <span :class="{ 'spin': loading }">↻</span>
+        </button>
+      </div>
     </div>
 
     <!-- Tab 切换 -->
@@ -81,7 +145,11 @@ const updateTime = ref('2026-06-14 15:00:00')
       <button
         :class="['tab', { 'tab--active': activeTab === 'sector' }]"
         @click="activeTab = 'sector'"
-      >板块热点</button>
+      >行业板块</button>
+      <button
+        :class="['tab', { 'tab--active': activeTab === 'concept' }]"
+        @click="activeTab = 'concept'"
+      >概念板块</button>
       <button
         :class="['tab', { 'tab--active': activeTab === 'stats' }]"
         @click="activeTab = 'stats'"
@@ -123,22 +191,34 @@ const updateTime = ref('2026-06-14 15:00:00')
       </div>
     </div>
 
-    <!-- 板块热点 -->
+    <!-- 行业板块 -->
     <div v-if="activeTab === 'sector'" class="sectors-list">
-      <div v-for="(s, i) in sectors" :key="s.name" class="sector-row">
+      <div v-for="(s, i) in sectors" :key="s.code" class="sector-row">
         <div class="sector-rank" :style="{ color: i < 3 ? '#ffd700' : '#666' }">{{ i + 1 }}</div>
         <div class="sector-info">
           <div class="sector-name">{{ s.name }}</div>
-          <div class="sector-reason">{{ s.reason }}</div>
-        </div>
-        <div class="sector-leader">
-          <span class="sector-leader__label">龙头</span>
-          <span class="sector-leader__name">{{ s.leader }}</span>
+          <div class="sector-reason" v-if="s.price">最新价: {{ s.price.toFixed(2) }}</div>
         </div>
         <div class="sector-change" :style="{ color: returnColor(s.changePercent) }">
           {{ s.changePercent > 0 ? '+' : '' }}{{ s.changePercent.toFixed(2) }}%
         </div>
       </div>
+      <div v-if="sectors.length === 0 && !loading" class="empty-hint">暂无数据</div>
+    </div>
+
+    <!-- 概念板块 -->
+    <div v-if="activeTab === 'concept'" class="sectors-list">
+      <div v-for="(s, i) in concepts" :key="s.code" class="sector-row">
+        <div class="sector-rank" :style="{ color: i < 3 ? '#ffd700' : '#666' }">{{ i + 1 }}</div>
+        <div class="sector-info">
+          <div class="sector-name">{{ s.name }}</div>
+          <div class="sector-reason" v-if="s.price">最新价: {{ s.price.toFixed(2) }}</div>
+        </div>
+        <div class="sector-change" :style="{ color: returnColor(s.changePercent) }">
+          {{ s.changePercent > 0 ? '+' : '' }}{{ s.changePercent.toFixed(2) }}%
+        </div>
+      </div>
+      <div v-if="concepts.length === 0 && !loading" class="empty-hint">暂无数据</div>
     </div>
 
     <!-- 市场情绪 -->
@@ -171,21 +251,21 @@ const updateTime = ref('2026-06-14 15:00:00')
 
       <div class="stats-detail">
         <div class="detail-row">
-          <span class="detail-label">两市成交</span>
-          <span class="detail-value">{{ marketStats.totalVolume }}</span>
-        </div>
-        <div class="detail-row">
           <span class="detail-label">北向资金</span>
-          <span class="detail-value" style="color: #ff4d4f">{{ marketStats.northFlow }}</span>
+          <span class="detail-value" :style="{ color: marketStats.northFlow?.startsWith('+') ? '#ff4d4f' : '#00c3ff' }">{{ marketStats.northFlow || '--' }}</span>
         </div>
         <div class="detail-row">
           <span class="detail-label">市场情绪</span>
           <span class="detail-value" style="color: #ffd700">{{ marketStats.sentiment }}</span>
         </div>
+        <div class="detail-row">
+          <span class="detail-label">更新时间</span>
+          <span class="detail-value">{{ marketStats.updateAt }}</span>
+        </div>
       </div>
 
       <!-- 涨跌分布条 -->
-      <div class="bar-chart">
+      <div class="bar-chart" v-if="marketStats.upCount + marketStats.downCount + marketStats.flatCount > 0">
         <div class="bar-label">涨跌分布</div>
         <div class="bar-container">
           <div class="bar-segment bar-segment--up" :style="{ width: (marketStats.upCount / (marketStats.upCount + marketStats.downCount + marketStats.flatCount) * 100) + '%' }"></div>
@@ -221,10 +301,48 @@ const updateTime = ref('2026-06-14 15:00:00')
   margin: 0;
 }
 
-.dashboard__time {
+.dashboard__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard__loading {
   font-size: 11px;
   color: var(--text-tertiary);
-  font-family: var(--font-mono);
+}
+
+.dashboard__refresh {
+  width: 28px;
+  height: 28px;
+  background: rgba(255, 215, 0, 0.1);
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  color: var(--accent);
+  border-radius: 50%;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dashboard__refresh:hover {
+  background: rgba(255, 215, 0, 0.2);
+}
+
+.dashboard__refresh:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.spin {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* Tabs */
@@ -232,6 +350,7 @@ const updateTime = ref('2026-06-14 15:00:00')
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
+  flex-wrap: wrap;
 }
 
 .tab {
@@ -373,29 +492,19 @@ const updateTime = ref('2026-06-14 15:00:00')
   white-space: nowrap;
 }
 
-.sector-leader {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-.sector-leader__label {
-  font-size: 10px;
-  color: var(--text-tertiary);
-}
-
-.sector-leader__name {
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
 .sector-change {
   font-size: 15px;
   font-weight: 700;
   font-family: var(--font-mono);
   min-width: 72px;
   text-align: right;
+}
+
+.empty-hint {
+  text-align: center;
+  padding: 32px;
+  color: var(--text-tertiary);
+  font-size: 14px;
 }
 
 /* Stats Panel */

@@ -1,7 +1,5 @@
 package auth
 
-import "time"
-
 // JWTManager JWT 管理器
 // type JWTManager struct {
 //     secret     []byte

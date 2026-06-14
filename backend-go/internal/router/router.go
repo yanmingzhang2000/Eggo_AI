@@ -25,10 +25,12 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 	// Service 层
 	authSvc := service.NewAuthService(userRepo, jwtSecret)
 	eggSvc := service.NewEggService(eggRepo)
+	marketSvc := service.NewMarketService()
 
 	// Controller 层
 	authCtrl := controller.NewAuthController(authSvc)
 	eggCtrl := controller.NewEggController(eggSvc)
+	marketCtrl := controller.NewMarketController(marketSvc)
 
 	// ── 路由注册 ──────────────────────────────────────────────
 	api := r.Group("/api/v1")
@@ -45,6 +47,15 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 		egg := api.Group("/egg")
 		{
 			egg.GET("/status", eggCtrl.GetStatus)
+		}
+
+		// 大盘行情（公开接口）
+		market := api.Group("/market")
+		{
+			market.GET("/indices", marketCtrl.GetIndices)
+			market.GET("/sectors", marketCtrl.GetSectors)
+			market.GET("/concepts", marketCtrl.GetConcepts)
+			market.GET("/overview", marketCtrl.GetOverview)
 		}
 	}
 
