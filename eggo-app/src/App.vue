@@ -6,6 +6,7 @@ import AuthPage from '@/components/AuthPage.vue'
 import ChickenStatusCard from '@/components/ChickenStatusCard.vue'
 import FundMetrics from '@/components/FundMetrics.vue'
 import NewsFeed from '@/components/NewsFeed.vue'
+import MarketDashboard from '@/components/MarketDashboard.vue'
 
 const authStore = useAuthStore()
 const eggStore = useEggStore()
@@ -67,6 +68,7 @@ function handleLogout() {
 
     <!-- 主内容 -->
     <main v-else class="main">
+      <MarketDashboard />
       <ChickenStatusCard />
       <FundMetrics />
       <NewsFeed />
