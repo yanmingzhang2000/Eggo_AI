@@ -29,7 +29,7 @@ type cacheEntry struct {
 
 func NewMarketService() *MarketService {
 	return &MarketService{
-		client: &http.Client{Timeout: 10 * time.Second},
+		client: &http.Client{Timeout: 20 * time.Second},
 		cache:  make(map[string]cacheEntry),
 	}
 }
@@ -423,27 +423,45 @@ func (s *MarketService) FetchIndexHistory(code string, days int) ([]KLineData, e
 		return cached.([]KLineData), nil
 	}
 
-	url := fmt.Sprintf(
-		"https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%s&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=1&beg=0&end=20500101&lmt=%d",
-		code, days,
+	// 用 beg 参数按日期范围限制，避免拉取全量数据导致超时
+	// 多取 60 天以覆盖节假日、停牌等非交易日
+	beg := time.Now().AddDate(0, 0, -(days + 60)).Format("20060102")
+
+	apiURL := fmt.Sprintf(
+		"https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%s&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=1&beg=%s&end=20500101",
+		code, beg,
 	)
 
-	resp, err := s.client.Get(url)
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request failed: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	req.Header.Set("Referer", "https://quote.eastmoney.com/")
+
+	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch index history failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response body failed: %w", err)
+	}
 
 	var result struct {
-		Data struct {
+		Data *struct {
 			Klines []string `json:"klines"`
 		} `json:"data"`
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("parse index history failed: %w", err)
+	}
+
+	if result.Data == nil || len(result.Data.Klines) == 0 {
+		return []KLineData{}, nil
 	}
 
 	var klines []KLineData
@@ -459,6 +477,11 @@ func (s *MarketService) FetchIndexHistory(code string, days int) ([]KLineData, e
 			High:  parseSinaFloat(parts[3]),
 			Low:   parseSinaFloat(parts[4]),
 		})
+	}
+
+	// 只保留最后 days 条交易日数据
+	if len(klines) > days {
+		klines = klines[len(klines)-days:]
 	}
 
 	if len(klines) > 0 {

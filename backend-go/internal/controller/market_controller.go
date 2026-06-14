@@ -3,6 +3,7 @@ package controller
 import (
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -102,7 +103,11 @@ func (c *MarketController) GetIndexOptions(ctx *gin.Context) {
 // 获取指数历史K线
 func (c *MarketController) GetIndexHistory(ctx *gin.Context) {
 	code := ctx.DefaultQuery("code", "1.000300")
-	days := 120
+	daysStr := ctx.DefaultQuery("days", "120")
+	days, err := strconv.Atoi(daysStr)
+	if err != nil || days <= 0 {
+		days = 120
+	}
 
 	log.Printf("[MarketController] GET /api/v1/market/history?code=%s&days=%d", code, days)
 
