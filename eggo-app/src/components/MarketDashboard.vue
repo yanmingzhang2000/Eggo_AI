@@ -175,8 +175,43 @@ function returnArrow(val: number): string {
   return '→'
 }
 
-// SVG 折线图生成
-function generateChartPath(data: KLineData[]): string {
+// SVG 折线图生成（逐段变色）
+function generateChartPaths(data: KLineData[]): { up: string; down: string } {
+  if (data.length < 2) return { up: '', down: '' }
+  const closes = data.map(d => d.close)
+  const min = Math.min(...closes)
+  const max = Math.max(...closes)
+  const range = max - min || 1
+  const width = 460
+  const height = 200
+  const padding = { top: 20, bottom: 30, left: 50, right: 20 }
+  const chartW = width - padding.left - padding.right
+  const chartH = height - padding.top - padding.bottom
+
+  const points = closes.map((val, i) => {
+    const x = padding.left + (i / (closes.length - 1)) * chartW
+    const y = padding.top + chartH - ((val - min) / range) * chartH
+    return { x, y }
+  })
+
+  let upPath = ''
+  let downPath = ''
+
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1]
+    const curr = points[i]
+    const d = `M${prev.x},${prev.y} L${curr.x},${curr.y}`
+    if (closes[i] >= closes[i - 1]) {
+      upPath += (upPath ? ' ' : '') + d
+    } else {
+      downPath += (downPath ? ' ' : '') + d
+    }
+  }
+
+  return { up: upPath, down: downPath }
+}
+
+function generateChartFill(data: KLineData[]): string {
   if (data.length < 2) return ''
   const closes = data.map(d => d.close)
   const min = Math.min(...closes)
@@ -194,7 +229,7 @@ function generateChartPath(data: KLineData[]): string {
     return `${x},${y}`
   })
 
-  return `M${points.join(' L')}`
+  return `M${points.join(' L')} L${points[points.length - 1].split(',')[0]},${padding.top + chartH} L${points[0].split(',')[0]},${padding.top + chartH} Z`
 }
 
 function getChartYLabels(data: KLineData[]): { value: string; y: number }[] {
@@ -231,11 +266,6 @@ function getChartXLabels(data: KLineData[]): { date: string; x: number }[] {
     labels.push({ date, x })
   }
   return labels
-}
-
-function isChartUp(data: KLineData[]): boolean {
-  if (data.length < 2) return true
-  return data[data.length - 1].close >= data[0].close
 }
 
 onMounted(() => {
@@ -448,25 +478,36 @@ onUnmounted(() => {
                 class="chart-grid"
               />
 
-              <!-- 折线 -->
-              <path
-                :d="generateChartPath(klineData)"
-                fill="none"
-                :stroke="isChartUp(klineData) ? '#ff4d4f' : '#00b96b'"
-                stroke-width="2"
-                stroke-linejoin="round"
-              />
-
               <!-- 渐变填充 -->
               <defs>
                 <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" :stop-color="isChartUp(klineData) ? '#ff4d4f' : '#00b96b'" stop-opacity="0.3" />
-                  <stop offset="100%" :stop-color="isChartUp(klineData) ? '#ff4d4f' : '#00b96b'" stop-opacity="0" />
+                  <stop offset="0%" stop-color="#999" stop-opacity="0.2" />
+                  <stop offset="100%" stop-color="#999" stop-opacity="0" />
                 </linearGradient>
               </defs>
               <path
-                :d="generateChartPath(klineData) + ' L440,170 L50,170 Z'"
+                :d="generateChartFill(klineData)"
                 fill="url(#chartGrad)"
+              />
+
+              <!-- 涨（红） -->
+              <path
+                v-if="generateChartPaths(klineData).up"
+                :d="generateChartPaths(klineData).up"
+                fill="none"
+                stroke="#ff4d4f"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
+
+              <!-- 跌（绿） -->
+              <path
+                v-if="generateChartPaths(klineData).down"
+                :d="generateChartPaths(klineData).down"
+                fill="none"
+                stroke="#00b96b"
+                stroke-width="2"
+                stroke-linecap="round"
               />
 
               <!-- X 轴标签 -->
@@ -487,8 +528,8 @@ onUnmounted(() => {
               &nbsp;|&nbsp;起点 {{ klineData[0].close.toFixed(2) }}
               &nbsp;→&nbsp;终点 {{ klineData[klineData.length - 1].close.toFixed(2) }}
               &nbsp;
-              <span :style="{ color: isChartUp(klineData) ? '#ff4d4f' : '#00b96b' }">
-                ({{ isChartUp(klineData) ? '+' : '' }}{{ ((klineData[klineData.length - 1].close - klineData[0].close) / klineData[0].close * 100).toFixed(2) }}%)
+              <span :style="{ color: klineData[klineData.length - 1].close >= klineData[0].close ? '#ff4d4f' : '#00b96b' }">
+                ({{ klineData[klineData.length - 1].close >= klineData[0].close ? '+' : '' }}{{ ((klineData[klineData.length - 1].close - klineData[0].close) / klineData[0].close * 100).toFixed(2) }}%)
               </span>
             </span>
           </div>
