@@ -3,6 +3,7 @@ package controller
 import (
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -20,19 +21,44 @@ func NewPortfolioController(svc *service.PortfolioService) *PortfolioController 
 	return &PortfolioController{svc: svc}
 }
 
-// 从上下文获取 user_id（中间件设置）
 func getUserID(ctx *gin.Context) int64 {
 	uid, _ := ctx.Get("userID")
 	if uid == nil {
-		// 开发模式：默认用户 ID 为 1
 		return 1
 	}
 	return uid.(int64)
 }
 
-// CreateAccount POST /api/v1/portfolio/account
+func getAccountID(ctx *gin.Context) (int64, bool) {
+	idStr := ctx.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		response.Fail(ctx, http.StatusBadRequest, 40001, "无效的账户 ID")
+		return 0, false
+	}
+	return id, true
+}
+
+// ── 鸡笼管理 ──────────────────────────────────────────────────────────────
+
+// ListAccounts GET /api/v1/portfolio/accounts
+func (c *PortfolioController) ListAccounts(ctx *gin.Context) {
+	userID := getUserID(ctx)
+	summaries, err := c.svc.ListAccounts(userID)
+	if err != nil {
+		response.Fail(ctx, http.StatusInternalServerError, 50001, "获取鸡笼列表失败")
+		return
+	}
+	if summaries == nil {
+		summaries = []service.AccountSummary{}
+	}
+	response.OK(ctx, summaries)
+}
+
+// CreateAccount POST /api/v1/portfolio/accounts
 func (c *PortfolioController) CreateAccount(ctx *gin.Context) {
 	var req struct {
+		Name           string  `json:"name"`
 		InitialBalance float64 `json:"initialBalance" binding:"required,min=1000"`
 	}
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -41,9 +67,9 @@ func (c *PortfolioController) CreateAccount(ctx *gin.Context) {
 	}
 
 	userID := getUserID(ctx)
-	log.Printf("[PortfolioController] CreateAccount userId=%d balance=%.0f", userID, req.InitialBalance)
+	log.Printf("[PortfolioController] CreateAccount userId=%d name=%s balance=%.0f", userID, req.Name, req.InitialBalance)
 
-	account, err := c.svc.CreateAccount(userID, req.InitialBalance)
+	account, err := c.svc.CreateAccount(userID, req.Name, req.InitialBalance)
 	if err != nil {
 		response.Fail(ctx, http.StatusBadRequest, 40002, err.Error())
 		return
@@ -52,10 +78,31 @@ func (c *PortfolioController) CreateAccount(ctx *gin.Context) {
 	response.OK(ctx, account)
 }
 
-// GetAccount GET /api/v1/portfolio/account
+// DeleteAccount DELETE /api/v1/portfolio/accounts/:id
+func (c *PortfolioController) DeleteAccount(ctx *gin.Context) {
+	accountID, ok := getAccountID(ctx)
+	if !ok {
+		return
+	}
+
+	if err := c.svc.DeleteAccount(accountID); err != nil {
+		response.Fail(ctx, http.StatusBadRequest, 40003, err.Error())
+		return
+	}
+
+	response.OK(ctx, gin.H{"message": "鸡笼已删除"})
+}
+
+// ── 账户详情 ──────────────────────────────────────────────────────────────
+
+// GetAccount GET /api/v1/portfolio/accounts/:id
 func (c *PortfolioController) GetAccount(ctx *gin.Context) {
-	userID := getUserID(ctx)
-	summary, err := c.svc.GetAccountSummary(userID)
+	accountID, ok := getAccountID(ctx)
+	if !ok {
+		return
+	}
+
+	summary, err := c.svc.GetAccountSummary(accountID)
 	if err != nil {
 		response.Fail(ctx, http.StatusNotFound, 40401, err.Error())
 		return
@@ -63,10 +110,16 @@ func (c *PortfolioController) GetAccount(ctx *gin.Context) {
 	response.OK(ctx, summary)
 }
 
-// GetPositions GET /api/v1/portfolio/positions
+// ── 持仓 ──────────────────────────────────────────────────────────────────
+
+// GetPositions GET /api/v1/portfolio/accounts/:id/positions
 func (c *PortfolioController) GetPositions(ctx *gin.Context) {
-	userID := getUserID(ctx)
-	positions, err := c.svc.GetPositions(userID)
+	accountID, ok := getAccountID(ctx)
+	if !ok {
+		return
+	}
+
+	positions, err := c.svc.GetPositions(accountID)
 	if err != nil {
 		response.Fail(ctx, http.StatusInternalServerError, 50001, "获取持仓失败")
 		return
@@ -77,30 +130,42 @@ func (c *PortfolioController) GetPositions(ctx *gin.Context) {
 	response.OK(ctx, positions)
 }
 
-// Buy POST /api/v1/portfolio/buy
+// ── 买入 ──────────────────────────────────────────────────────────────────
+
+// Buy POST /api/v1/portfolio/accounts/:id/buy
 func (c *PortfolioController) Buy(ctx *gin.Context) {
+	accountID, ok := getAccountID(ctx)
+	if !ok {
+		return
+	}
+
 	var req service.BuyRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		response.Fail(ctx, http.StatusBadRequest, 40001, "参数错误: fundCode + amount 必填")
 		return
 	}
 
-	userID := getUserID(ctx)
-	log.Printf("[PortfolioController] Buy userId=%d fund=%s amount=%.0f", userID, req.FundCode, req.Amount)
+	log.Printf("[PortfolioController] Buy accountId=%d fund=%s amount=%.0f", accountID, req.FundCode, req.Amount)
 
-	order, err := c.svc.Buy(userID, &req)
+	order, err := c.svc.Buy(accountID, &req)
 	if err != nil {
-		response.Fail(ctx, http.StatusBadRequest, 40003, err.Error())
+		response.Fail(ctx, http.StatusBadRequest, 40004, err.Error())
 		return
 	}
 
 	response.OK(ctx, order)
 }
 
-// GetPendingOrders GET /api/v1/portfolio/orders/pending
+// ── 待结算订单 ──────────────────────────────────────────────────────────────
+
+// GetPendingOrders GET /api/v1/portfolio/accounts/:id/orders/pending
 func (c *PortfolioController) GetPendingOrders(ctx *gin.Context) {
-	userID := getUserID(ctx)
-	orders, err := c.svc.GetPendingOrders(userID)
+	accountID, ok := getAccountID(ctx)
+	if !ok {
+		return
+	}
+
+	orders, err := c.svc.GetPendingOrders(accountID)
 	if err != nil {
 		response.Fail(ctx, http.StatusInternalServerError, 50001, "获取订单失败")
 		return
@@ -111,10 +176,16 @@ func (c *PortfolioController) GetPendingOrders(ctx *gin.Context) {
 	response.OK(ctx, orders)
 }
 
-// GetTransactions GET /api/v1/portfolio/transactions
+// ── 交易流水 ──────────────────────────────────────────────────────────────
+
+// GetTransactions GET /api/v1/portfolio/accounts/:id/transactions
 func (c *PortfolioController) GetTransactions(ctx *gin.Context) {
-	userID := getUserID(ctx)
-	txs, err := c.svc.GetTransactions(userID, 50)
+	accountID, ok := getAccountID(ctx)
+	if !ok {
+		return
+	}
+
+	txs, err := c.svc.GetTransactions(accountID, 50)
 	if err != nil {
 		response.Fail(ctx, http.StatusInternalServerError, 50001, "获取流水失败")
 		return

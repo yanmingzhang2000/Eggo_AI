@@ -5,6 +5,7 @@ import "time"
 // VirtualTransaction 交易流水
 type VirtualTransaction struct {
 	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	AccountID int64     `gorm:"column:account_id;not null" json:"accountId"`
 	UserID    int64     `gorm:"column:user_id;not null" json:"userId"`
 	FundCode  string    `gorm:"column:fund_code;size:10;not null" json:"fundCode"`
 	TxType    string    `gorm:"column:tx_type;size:12;not null" json:"txType"` // buy / sell / dividend / dca_buy

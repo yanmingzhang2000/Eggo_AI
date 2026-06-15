@@ -2,6 +2,8 @@
 import { ref } from 'vue'
 import { post, get } from '@/utils/request'
 
+const props = defineProps<{ accountId: number }>()
+
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'done'): void
@@ -22,7 +24,7 @@ async function submit() {
   errorMsg.value = ''
 
   try {
-    const res = await post('/portfolio/buy', {
+    const res = await post(`/portfolio/accounts/${props.accountId}/buy`, {
       fundCode: fundCode.value,
       fundName: fundName.value || fundCode.value,
       amount: amount.value,

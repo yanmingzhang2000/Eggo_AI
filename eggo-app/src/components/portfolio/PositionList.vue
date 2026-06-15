@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { get } from '@/utils/request'
 
 interface PositionView {
@@ -14,6 +14,8 @@ interface PositionView {
   returnPct: number
   dividendMethod: string
 }
+
+const props = defineProps<{ accountId: number }>()
 
 const emit = defineEmits<{
   (e: 'refresh'): void
@@ -38,7 +40,7 @@ function returnColor(val: number): string {
 
 async function fetchPositions() {
   try {
-    const res = await get<PositionView[]>('/portfolio/positions')
+    const res = await get<PositionView[]>(`/portfolio/accounts/${props.accountId}/positions`)
     if (res.code === 0 && res.data) {
       positions.value = res.data
     }
@@ -48,6 +50,7 @@ async function fetchPositions() {
 }
 
 onMounted(fetchPositions)
+watch(() => props.accountId, fetchPositions)
 </script>
 
 <template>

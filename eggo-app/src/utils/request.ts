@@ -41,6 +41,11 @@ export function post<T>(url: string, data?: Record<string, unknown>): Promise<Ap
   return api.post(url, data)
 }
 
+/** DELETE 请求 */
+export function del<T>(url: string): Promise<ApiResponse<T>> {
+  return api.delete(url)
+}
+
 // ─── 客户端缓存（localStorage，TTL 5 分钟）────────────────────────────────
 const CACHE_TTL = 5 * 60 * 1000 // 5 分钟
 

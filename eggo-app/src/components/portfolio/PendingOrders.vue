@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { get } from '@/utils/request'
 
 interface PendingOrder {
@@ -12,6 +12,8 @@ interface PendingOrder {
   orderDate: string
 }
 
+const props = defineProps<{ accountId: number }>()
+
 const orders = ref<PendingOrder[]>([])
 
 function fmt(val: number): string {
@@ -20,7 +22,7 @@ function fmt(val: number): string {
 
 async function fetchOrders() {
   try {
-    const res = await get<PendingOrder[]>('/portfolio/orders/pending')
+    const res = await get<PendingOrder[]>(`/portfolio/accounts/${props.accountId}/orders/pending`)
     if (res.code === 0 && res.data) {
       orders.value = res.data
     }
@@ -28,6 +30,7 @@ async function fetchOrders() {
 }
 
 onMounted(fetchOrders)
+watch(() => props.accountId, fetchOrders)
 </script>
 
 <template>

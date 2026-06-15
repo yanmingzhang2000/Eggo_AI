@@ -66,15 +66,20 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 			market.GET("/intraday", marketCtrl.GetIntraday)
 		}
 
-		// 虚拟养鸡（基）— 模拟盘
+		// 虚拟养鸡（基）— 模拟盘（多鸡笼）
 		portfolio := api.Group("/portfolio")
 		{
-			portfolio.POST("/account", portfolioCtrl.CreateAccount)
-			portfolio.GET("/account", portfolioCtrl.GetAccount)
-			portfolio.GET("/positions", portfolioCtrl.GetPositions)
-			portfolio.POST("/buy", portfolioCtrl.Buy)
-			portfolio.GET("/orders/pending", portfolioCtrl.GetPendingOrders)
-			portfolio.GET("/transactions", portfolioCtrl.GetTransactions)
+			// 鸡笼管理
+			portfolio.GET("/accounts", portfolioCtrl.ListAccounts)
+			portfolio.POST("/accounts", portfolioCtrl.CreateAccount)
+			portfolio.GET("/accounts/:id", portfolioCtrl.GetAccount)
+			portfolio.DELETE("/accounts/:id", portfolioCtrl.DeleteAccount)
+
+			// 鸡笼内操作
+			portfolio.GET("/accounts/:id/positions", portfolioCtrl.GetPositions)
+			portfolio.POST("/accounts/:id/buy", portfolioCtrl.Buy)
+			portfolio.GET("/accounts/:id/orders/pending", portfolioCtrl.GetPendingOrders)
+			portfolio.GET("/accounts/:id/transactions", portfolioCtrl.GetTransactions)
 		}
 	}
 

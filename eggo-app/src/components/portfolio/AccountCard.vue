@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { get } from '@/utils/request'
 
 interface AccountSummary {
+  id: number
+  name: string
   userId: number
   initialBalance: number
   cashBalance: number
@@ -12,6 +14,8 @@ interface AccountSummary {
   totalReturn: number
   pendingCount: number
 }
+
+const props = defineProps<{ accountId: number }>()
 
 const emit = defineEmits<{
   (e: 'buy'): void
@@ -31,7 +35,7 @@ function returnColor(val: number): string {
 
 async function fetchAccount() {
   try {
-    const res = await get<AccountSummary>('/portfolio/account')
+    const res = await get<AccountSummary>(`/portfolio/accounts/${props.accountId}`)
     if (res.code === 0 && res.data) {
       account.value = res.data
     }
@@ -39,6 +43,7 @@ async function fetchAccount() {
 }
 
 onMounted(fetchAccount)
+watch(() => props.accountId, fetchAccount)
 </script>
 
 <template>

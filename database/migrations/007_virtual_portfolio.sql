@@ -2,10 +2,11 @@
 -- 模拟养鸡（基）系统 — 虚拟盘表结构
 -- ═══════════════════════════════════════════════════════════════
 
--- 虚拟账户
+-- 虚拟账户（一个用户可以有多个鸡笼）
 CREATE TABLE IF NOT EXISTS virtual_account (
   id              BIGSERIAL PRIMARY KEY,
-  user_id         BIGINT NOT NULL UNIQUE,
+  user_id         BIGINT NOT NULL,
+  name            VARCHAR(50) NOT NULL DEFAULT '我的鸡笼',  -- 鸡笼名称
   initial_balance NUMERIC(14,2) NOT NULL,          -- 初始资金
   cash_balance    NUMERIC(14,2) NOT NULL,          -- 可用现金
   frozen_cash     NUMERIC(14,2) DEFAULT 0,         -- 冻结资金（待结算订单）
@@ -13,10 +14,12 @@ CREATE TABLE IF NOT EXISTS virtual_account (
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS idx_virtual_account_user ON virtual_account(user_id);
 
 -- 持仓
 CREATE TABLE IF NOT EXISTS virtual_position (
   id              BIGSERIAL PRIMARY KEY,
+  account_id      BIGINT NOT NULL REFERENCES virtual_account(id) ON DELETE CASCADE,
   user_id         BIGINT NOT NULL,
   fund_code       VARCHAR(10) NOT NULL,
   fund_name       VARCHAR(100) NOT NULL DEFAULT '',
@@ -26,12 +29,13 @@ CREATE TABLE IF NOT EXISTS virtual_position (
   dividend_method VARCHAR(10) DEFAULT 'reinvest',  -- reinvest=红利再投 / cash=现金分红
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE (user_id, fund_code)
+  UNIQUE (account_id, fund_code)
 );
 
 -- 订单（买/卖申请，T日提交，T+1确认）
 CREATE TABLE IF NOT EXISTS virtual_order (
   id              BIGSERIAL PRIMARY KEY,
+  account_id      BIGINT NOT NULL REFERENCES virtual_account(id) ON DELETE CASCADE,
   user_id         BIGINT NOT NULL,
   fund_code       VARCHAR(10) NOT NULL,
   fund_name       VARCHAR(100) NOT NULL DEFAULT '',
@@ -49,6 +53,7 @@ CREATE TABLE IF NOT EXISTS virtual_order (
 -- 交易流水
 CREATE TABLE IF NOT EXISTS virtual_transaction (
   id              BIGSERIAL PRIMARY KEY,
+  account_id      BIGINT NOT NULL REFERENCES virtual_account(id) ON DELETE CASCADE,
   user_id         BIGINT NOT NULL,
   fund_code       VARCHAR(10) NOT NULL,
   tx_type         VARCHAR(12) NOT NULL,            -- buy / sell / dividend / dca_buy
@@ -61,6 +66,7 @@ CREATE TABLE IF NOT EXISTS virtual_transaction (
 -- 定投计划
 CREATE TABLE IF NOT EXISTS virtual_dca_plan (
   id              BIGSERIAL PRIMARY KEY,
+  account_id      BIGINT NOT NULL REFERENCES virtual_account(id) ON DELETE CASCADE,
   user_id         BIGINT NOT NULL,
   fund_code       VARCHAR(10) NOT NULL,
   fund_name       VARCHAR(100) NOT NULL DEFAULT '',
@@ -74,8 +80,9 @@ CREATE TABLE IF NOT EXISTS virtual_dca_plan (
 );
 
 -- 索引
-CREATE INDEX IF NOT EXISTS idx_virtual_order_user_status ON virtual_order(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_virtual_order_account_status ON virtual_order(account_id, status);
 CREATE INDEX IF NOT EXISTS idx_virtual_order_date ON virtual_order(order_date);
-CREATE INDEX IF NOT EXISTS idx_virtual_position_user ON virtual_position(user_id);
-CREATE INDEX IF NOT EXISTS idx_virtual_transaction_user ON virtual_transaction(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_virtual_position_account ON virtual_position(account_id);
+CREATE INDEX IF NOT EXISTS idx_virtual_transaction_account ON virtual_transaction(account_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_virtual_dca_next ON virtual_dca_plan(status, next_exec_date);
+CREATE INDEX IF NOT EXISTS idx_virtual_dca_account ON virtual_dca_plan(account_id);
