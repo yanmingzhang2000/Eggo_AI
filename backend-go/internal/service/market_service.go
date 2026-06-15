@@ -6,6 +6,8 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,9 +16,11 @@ import (
 
 // MarketService 大盘行情服务
 type MarketService struct {
-	client  *http.Client
-	cache   map[string]cacheEntry
-	cacheMu sync.RWMutex
+	client    *http.Client
+	cache     map[string]cacheEntry
+	cacheMu   sync.RWMutex
+	proxyBase string // Cloudflare Worker 代理地址，为空则直连
+	proxyKey  string // 代理 API Key
 }
 
 type cacheEntry struct {
@@ -25,9 +29,15 @@ type cacheEntry struct {
 }
 
 func NewMarketService() *MarketService {
+	// 从环境变量读取代理配置
+	proxyBase := os.Getenv("CF_PROXY_URL")  // e.g. https://eggo-fund-proxy.xxx.workers.dev
+	proxyKey := os.Getenv("CF_PROXY_KEY")    // e.g. eggo-proxy-2026
+
 	return &MarketService{
-		client: &http.Client{Timeout: 20 * time.Second},
-		cache:  make(map[string]cacheEntry),
+		client:    &http.Client{Timeout: 20 * time.Second},
+		cache:     make(map[string]cacheEntry),
+		proxyBase: proxyBase,
+		proxyKey:  proxyKey,
 	}
 }
 
@@ -85,6 +95,48 @@ func (s *MarketService) setCache(key string, data interface{}, ttl time.Duration
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
 	s.cache[key] = cacheEntry{data: data, expiresAt: time.Now().Add(ttl)}
+}
+
+// proxyFetch 通过 Cloudflare Worker 代理发起请求
+// 如果 proxyBase 为空则直接请求（用于境内直连）
+func (s *MarketService) proxyFetch(rawURL string) (*http.Response, error) {
+	if s.proxyBase == "" {
+		// 无代理，直连
+		req, err := http.NewRequest("GET", rawURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+		req.Header.Set("Referer", "https://fund.eastmoney.com/")
+		return s.client.Do(req)
+	}
+
+	// 通过代理转发
+	proxyURL := fmt.Sprintf("%s/proxy?url=%s&key=%s",
+		s.proxyBase,
+		url.QueryEscape(rawURL),
+		url.QueryEscape(s.proxyKey),
+	)
+
+	req, err := http.NewRequest("GET", proxyURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	return s.client.Do(req)
+}
+
+// proxyFetchText 通过代理获取文本内容（简化调用）
+func (s *MarketService) proxyFetchText(rawURL string) (string, error) {
+	resp, err := s.proxyFetch(rawURL)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
 }
 
 // eastmoneyToYahooCode 将东方财富 secid 格式转换为 Yahoo Finance symbol
@@ -535,21 +587,10 @@ func (s *MarketService) FetchFundDistribution() (*FundDistribution, error) {
 // fetchEastmoneyRank 解析天天基金排行榜接口
 // 字段顺序（0-indexed）：0=code, 1=name, 2=pinyin, 3=date, 4=unit_nav, 5=acc_nav, 6=daily_return, ...
 func (s *MarketService) fetchEastmoneyRank(apiURL string) ([]FundQuote, error) {
-	req, err := http.NewRequest("GET", apiURL, nil)
+	content, err := s.proxyFetchText(apiURL)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Referer", "https://fund.eastmoney.com/fund.html")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	content := string(body)
 
 	// 响应格式：var rankData = {datas:["code,name,...","code,name,..."],allRecords:N,...}
 	// 提取 datas 数组内容
@@ -605,19 +646,12 @@ func (s *MarketService) FetchFundQuotes(codes []string) ([]FundQuote, error) {
 		}
 
 		apiURL := fmt.Sprintf("https://fundgz.1234567.com.cn/js/%s.js?rt=%d", code, time.Now().Unix())
-		req, _ := http.NewRequest("GET", apiURL, nil)
-		req.Header.Set("Referer", "https://fund.eastmoney.com/")
-		req.Header.Set("User-Agent", "Mozilla/5.0")
-
-		resp, err := s.client.Do(req)
+		content, err := s.proxyFetchText(apiURL)
 		if err != nil {
 			continue
 		}
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
 
 		// 格式：jsonpgz({"fundcode":"003095","name":"...","jzrq":"2026-06-11","dwjz":"1.5353","gsz":"1.5661","gszzl":"2.01","gztime":"2026-06-12 15:00"});
-		content := string(body)
 		jsonStart := strings.Index(content, "(")
 		jsonEnd := strings.LastIndex(content, ")")
 		if jsonStart < 0 || jsonEnd <= jsonStart {
