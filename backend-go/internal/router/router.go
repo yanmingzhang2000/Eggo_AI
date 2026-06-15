@@ -66,8 +66,9 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 			market.GET("/intraday", marketCtrl.GetIntraday)
 		}
 
-		// 虚拟养鸡（基）— 模拟盘（多鸡笼）
+		// 虚拟养鸡（基）— 模拟盘（多鸡笼）— 需要登录，游客不可访问
 		portfolio := api.Group("/portfolio")
+		portfolio.Use(middleware.JWTAuthMiddleware(jwtSecret))
 		{
 			// 鸡笼管理
 			portfolio.GET("/accounts", portfolioCtrl.ListAccounts)

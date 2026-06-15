@@ -22,9 +22,9 @@ func NewPortfolioController(svc *service.PortfolioService) *PortfolioController 
 }
 
 func getUserID(ctx *gin.Context) int64 {
-	uid, _ := ctx.Get("userID")
-	if uid == nil {
-		return 1
+	uid, exists := ctx.Get("userID")
+	if !exists || uid == nil {
+		return 0
 	}
 	return uid.(int64)
 }
