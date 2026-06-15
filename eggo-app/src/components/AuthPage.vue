@@ -53,7 +53,7 @@ function toggleMode() {
     <div class="auth-card">
       <!-- Logo -->
       <div class="auth-card__header">
-        <span class="auth-card__logo">🐔</span>
+        <img src="/logo.svg" class="auth-card__logo" alt="鸡生蛋" />
         <h1 class="auth-card__title">鸡生蛋</h1>
         <p class="auth-card__subtitle">Eggo · 智能基金决策</p>
       </div>
@@ -158,9 +158,11 @@ function toggleMode() {
 }
 
 .auth-card__logo {
-  font-size: 48px;
+  width: 64px;
+  height: 64px;
   display: block;
-  margin-bottom: 12px;
+  margin: 0 auto 12px;
+  object-fit: contain;
 }
 
 .auth-card__title {

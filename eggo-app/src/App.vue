@@ -41,7 +41,7 @@ function handleLogout() {
     <!-- Header -->
     <header class="header">
       <div class="header__left">
-        <h1 class="header__title">🐔 鸡生蛋</h1>
+        <h1 class="header__title"><img src="/logo.svg" class="header__logo" alt="鸡生蛋" /> 鸡生蛋</h1>
         <span class="header__sub">Eggo · 智能基金决策</span>
       </div>
       <div class="header__right">
@@ -115,6 +115,13 @@ function handleLogout() {
   background: rgba(10, 10, 10, 0.95);
   backdrop-filter: blur(20px);
   z-index: 100;
+}
+
+.header__logo {
+  width: 24px;
+  height: 24px;
+  vertical-align: middle;
+  object-fit: contain;
 }
 
 .header__title {

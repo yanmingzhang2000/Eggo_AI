@@ -89,7 +89,7 @@ onMounted(fetchCages)
     <!-- 无鸡笼：引导创建 -->
     <div v-else-if="!selectedCage && cages.length === 0" class="portfolio__create">
       <div class="create-card">
-        <div class="create-card__icon">🐔</div>
+        <img src="/logo.svg" class="create-card__icon" alt="鸡生蛋" />
         <h2 class="create-card__title">开启你的养鸡之旅</h2>
         <p class="create-card__sub">创建你的第一个鸡笼，开始模拟基金投资</p>
         <button class="create-submit" @click="showCreate = true">
@@ -203,7 +203,7 @@ onMounted(fetchCages)
   width: 100%;
 }
 
-.create-card__icon { font-size: 48px; margin-bottom: 12px; }
+.create-card__icon { width: 64px; height: 64px; object-fit: contain; margin-bottom: 12px; }
 
 .create-card__title {
   font-size: 20px;
