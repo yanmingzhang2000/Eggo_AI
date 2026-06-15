@@ -15,7 +15,7 @@ const amount = ref<number>(10000)
 const submitting = ref(false)
 const errorMsg = ref('')
 
-const quickAmounts = [1000, 5000, 10000, 50000]
+const quickAmounts = [10000, 50000, 100000, 500000]
 
 async function submit() {
   if (!fundCode.value || amount.value <= 0) return
