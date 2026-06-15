@@ -686,3 +686,88 @@ func (s *MarketService) FetchFundQuotes(codes []string) ([]FundQuote, error) {
 
 	return results, nil
 }
+
+// ─── 分时指数 ────────────────────────────────────────────────────────────
+
+// IntradayPoint 分时数据点
+type IntradayPoint struct {
+	Time  string  `json:"time"`  // "09:35"
+	Price float64 `json:"price"` // 当前价
+	Open  float64 `json:"open"`
+	High  float64 `json:"high"`
+	Low   float64 `json:"low"`
+	Vol   float64 `json:"vol"` // 成交量（手）
+}
+
+// IntradayData 分时数据
+type IntradayData struct {
+	Code      string          `json:"code"`
+	Name      string          `json:"name"`
+	PreClose  float64         `json:"preClose"` // 昨收
+	Points    []IntradayPoint `json:"points"`
+	UpdateAt  string          `json:"updateAt"`
+}
+
+// FetchIntraday 通过东方财富 API 获取指数当天分时数据（5分钟K线）
+func (s *MarketService) FetchIntraday(code string) (*IntradayData, error) {
+	cacheKey := "intraday_" + code
+	if cached := s.getCache(cacheKey); cached != nil {
+		return cached.(*IntradayData), nil
+	}
+
+	// 东方财富 5 分钟 K 线接口，lmt=48 覆盖全天 4 小时交易时段
+	apiURL := fmt.Sprintf(
+		"https://push2his.eastmoney.com/api/qt/stock/kline?secid=%s&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=5&fqt=0&beg=0&end=20500101&lmt=48&_=%d",
+		code, time.Now().Unix(),
+	)
+
+	content, err := s.proxyFetchText(apiURL)
+	if err != nil {
+		return nil, fmt.Errorf("fetch intraday %s failed: %w", code, err)
+	}
+
+	// 解析响应 JSON
+	var raw struct {
+		Data struct {
+			Name     string   `json:"name"`
+			Code     string   `json:"code"`
+			PreClose float64  `json:"preclose"`
+			Klines   []string `json:"klines"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(content), &raw); err != nil {
+		return nil, fmt.Errorf("parse intraday json failed: %w", err)
+	}
+
+	result := &IntradayData{
+		Code:     code,
+		Name:     raw.Data.Name,
+		PreClose: raw.Data.PreClose,
+		UpdateAt: time.Now().Format("2006-01-02 15:04:05"),
+	}
+
+	// klines 格式："2026-06-15 09:35,3350.12,3352.00,3355.00,3348.00,123456,1234567890.00,..."
+	for _, line := range raw.Data.Klines {
+		parts := strings.Split(line, ",")
+		if len(parts) < 7 {
+			continue
+		}
+		// 取时间部分 "2026-06-15 09:35" → "09:35"
+		timePart := parts[0]
+		if idx := strings.Index(timePart, " "); idx >= 0 {
+			timePart = timePart[idx+1:]
+		}
+
+		result.Points = append(result.Points, IntradayPoint{
+			Time:  timePart,
+			Price: parseSinaFloat(parts[1]), // 收盘价（5分钟K线的收盘）
+			Open:  parseSinaFloat(parts[2]),
+			High:  parseSinaFloat(parts[3]),
+			Low:   parseSinaFloat(parts[4]),
+			Vol:   parseSinaFloat(parts[5]),
+		})
+	}
+
+	s.setCache(cacheKey, result, 30*time.Second) // 分时数据缓存 30 秒
+	return result, nil
+}

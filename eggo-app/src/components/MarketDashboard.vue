@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { get, getCache, setCache } from '@/utils/request'
 import HistoryTrend from './HistoryTrend.vue'
+import IntradayChart from './IntradayChart.vue'
 
 interface IndexData {
   name: string
@@ -53,6 +54,8 @@ const activeTab = ref<'index' | 'sector' | 'concept' | 'stats'>('index')
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 const showHistory = ref(false)
+const showIntraday = ref(false)
+const intradayCode = ref('1.000001')
 
 // 先读缓存立即展示，再后台静默拉新数据
 async function fetchIndices() {
@@ -148,6 +151,11 @@ function indexBenchmark(code: string): string {
   return BENCHMARK_MAP[code] ?? ''
 }
 
+function openIntraday(code: string) {
+  intradayCode.value = code
+  showIntraday.value = true
+}
+
 onMounted(() => {
   fetchAll()
   refreshTimer = setInterval(fetchAll, 60000)
@@ -159,8 +167,11 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!-- 分时趋势全屏页 -->
+  <IntradayChart v-if="showIntraday" :code="intradayCode" @back="showIntraday = false" />
+
   <!-- 历史趋势全屏页 -->
-  <HistoryTrend v-if="showHistory" @back="showHistory = false" />
+  <HistoryTrend v-else-if="showHistory" @back="showHistory = false" />
 
   <!-- 大盘看板 -->
   <section v-else class="dashboard">
@@ -197,7 +208,7 @@ onUnmounted(() => {
 
     <!-- 指数行情 -->
     <div v-if="activeTab === 'index'" class="indices-grid">
-      <div v-for="idx in indices" :key="idx.code" class="index-card">
+      <div v-for="idx in indices" :key="idx.code" class="index-card index-card--clickable" @click="openIntraday(idx.code)">
         <div class="index-card__top">
           <span class="index-card__name">{{ idx.name }}</span>
           <span class="index-card__code">{{ idx.code }}</span>
@@ -228,6 +239,7 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="index-card__benchmark">{{ indexBenchmark(idx.code) }}</div>
+        <div class="index-card__hint">点击查看分时走势 →</div>
       </div>
     </div>
 
@@ -462,6 +474,10 @@ onUnmounted(() => {
   cursor: default;
 }
 
+.index-card--clickable {
+  cursor: pointer;
+}
+
 .index-card:hover {
   border-color: #f7ba1e;
   box-shadow: 0 0 12px rgba(247, 186, 30, 0.15);
@@ -517,6 +533,18 @@ onUnmounted(() => {
   color: #f7ba1e;
   opacity: 0.8;
   line-height: 1.3;
+}
+
+.index-card__hint {
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.index-card--clickable:hover .index-card__hint {
+  opacity: 1;
 }
 
 .meta-item {

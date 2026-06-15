@@ -19,7 +19,7 @@ const ALLOWED_HOSTS = new Set([
   'api.fund.eastmoney.com',      // 东方财富基金
   'fund.eastmoney.com',          // 东方财富基金
   'push2.eastmoney.com',         // 东方财富行情推送
-  'push2his.eastmoney.com',      // 东方财富历史数据
+  'push2his.eastmoney.com',      // 东方财富历史/K线数据
   'datacenter-web.eastmoney.com',// 东方财富数据中心
   'data.eastmoney.com',          // 东方财富数据
   'hq.sinajs.cn',                // 新浪财经行情

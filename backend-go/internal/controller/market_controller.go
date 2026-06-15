@@ -137,6 +137,23 @@ func (c *MarketController) GetFundDistribution(ctx *gin.Context) {
 	response.OK(ctx, data)
 }
 
+// GetIntraday GET /api/v1/market/intraday?code=1.000001
+// 获取指数当天分时数据（5分钟K线）
+func (c *MarketController) GetIntraday(ctx *gin.Context) {
+	code := ctx.DefaultQuery("code", "1.000001")
+
+	log.Printf("[MarketController] GET /api/v1/market/intraday?code=%s", code)
+
+	data, err := c.svc.FetchIntraday(code)
+	if err != nil {
+		log.Printf("[MarketController] 获取分时数据失败: %v", err)
+		response.Fail(ctx, http.StatusInternalServerError, 50008, "获取分时数据失败")
+		return
+	}
+
+	response.OK(ctx, data)
+}
+
 // GetFundQuotes GET /api/v1/market/fund-quotes?codes=110011,161725
 // 批量获取基金实时估值
 func (c *MarketController) GetFundQuotes(ctx *gin.Context) {
