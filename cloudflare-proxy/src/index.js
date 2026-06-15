@@ -24,7 +24,7 @@ const ALLOWED_HOSTS = new Set([
   'data.eastmoney.com',          // 东方财富数据
   'hq.sinajs.cn',                // 新浪财经行情
   'vip.stock.finance.sina.com.cn',// 新浪股票
-  'money.finance.sina.com.cn',   // 新浪基金
+  'money.finance.sina.com.cn',   // 新浪基金/分时K线
   'api.doctorxiong.club',        // 第三方基金
   'api.yfin.dev',                // Yahoo Finance 代理（备用）
 ])
@@ -285,6 +285,7 @@ function getReferer(hostname) {
   if (hostname.includes('eastmoney')) return 'https://fund.eastmoney.com/'
   if (hostname.includes('1234567')) return 'https://fund.eastmoney.com/'
   if (hostname.includes('sina')) return 'https://finance.sina.com.cn/'
+  if (hostname.includes('yfin')) return 'https://finance.yahoo.com/'
   return 'https://www.google.com'
 }
 

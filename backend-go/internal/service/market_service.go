@@ -708,17 +708,32 @@ type IntradayData struct {
 	UpdateAt  string          `json:"updateAt"`
 }
 
-// FetchIntraday 通过东方财富 API 获取指数当天分时数据（5分钟K线）
+// emToSinaCode 将东方财富 secid 转为新浪 symbol
+// 1.000001 → sh000001, 0.399001 → sz399001
+func emToSinaCode(emCode string) string {
+	parts := strings.SplitN(emCode, ".", 2)
+	if len(parts) != 2 {
+		return emCode
+	}
+	market, symbol := parts[0], parts[1]
+	if market == "1" {
+		return "sh" + symbol
+	}
+	return "sz" + symbol
+}
+
+// FetchIntraday 通过新浪财经 API 获取指数当天分时数据（5分钟K线）
 func (s *MarketService) FetchIntraday(code string) (*IntradayData, error) {
 	cacheKey := "intraday_" + code
 	if cached := s.getCache(cacheKey); cached != nil {
 		return cached.(*IntradayData), nil
 	}
 
-	// 东方财富 5 分钟 K 线接口，lmt=48 覆盖全天 4 小时交易时段
+	sinaCode := emToSinaCode(code)
+	// 新浪 5 分钟 K 线，datalen=48 覆盖全天 4 小时
 	apiURL := fmt.Sprintf(
-		"https://push2his.eastmoney.com/api/qt/stock/kline?secid=%s&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=5&fqt=0&beg=0&end=20500101&lmt=48&_=%d",
-		code, time.Now().Unix(),
+		"https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=%s&scale=5&ma=no&datalen=48",
+		sinaCode,
 	)
 
 	content, err := s.proxyFetchText(apiURL)
@@ -726,48 +741,72 @@ func (s *MarketService) FetchIntraday(code string) (*IntradayData, error) {
 		return nil, fmt.Errorf("fetch intraday %s failed: %w", code, err)
 	}
 
-	// 解析响应 JSON
-	var raw struct {
-		Data struct {
-			Name     string   `json:"name"`
-			Code     string   `json:"code"`
-			PreClose float64  `json:"preclose"`
-			Klines   []string `json:"klines"`
-		} `json:"data"`
+	// 新浪返回 JSON 数组：[{"day":"2026-06-15 09:35:00","open":"...","high":"...","low":"...","close":"...","volume":"..."}, ...]
+	var rawBars []struct {
+		Day    string `json:"day"`
+		Open   string `json:"open"`
+		High   string `json:"high"`
+		Low    string `json:"low"`
+		Close  string `json:"close"`
+		Volume string `json:"volume"`
 	}
-	if err := json.Unmarshal([]byte(content), &raw); err != nil {
+	if err := json.Unmarshal([]byte(content), &rawBars); err != nil {
 		return nil, fmt.Errorf("parse intraday json failed: %w", err)
 	}
 
 	result := &IntradayData{
 		Code:     code,
-		Name:     raw.Data.Name,
-		PreClose: raw.Data.PreClose,
+		Name:     yahooIndexName(code), // 复用已有的名称映射
 		UpdateAt: time.Now().Format("2006-01-02 15:04:05"),
 	}
 
-	// klines 格式："2026-06-15 09:35,3350.12,3352.00,3355.00,3348.00,123456,1234567890.00,..."
-	for _, line := range raw.Data.Klines {
-		parts := strings.Split(line, ",")
-		if len(parts) < 7 {
-			continue
+	// 只保留今天的数据
+	today := time.Now().Format("2006-01-02")
+	var todayBars []struct {
+		Day    string `json:"day"`
+		Open   string `json:"open"`
+		High   string `json:"high"`
+		Low    string `json:"low"`
+		Close  string `json:"close"`
+		Volume string `json:"volume"`
+	}
+	for _, bar := range rawBars {
+		if strings.HasPrefix(bar.Day, today) {
+			todayBars = append(todayBars, bar)
 		}
-		// 取时间部分 "2026-06-15 09:35" → "09:35"
-		timePart := parts[0]
+	}
+
+	// 如果今天没有数据（非交易日或未开盘），取最后的数据展示
+	if len(todayBars) == 0 {
+		todayBars = rawBars
+	}
+
+	for _, bar := range todayBars {
+		// 取时间部分 "2026-06-15 09:35:00" → "09:35"
+		timePart := bar.Day
 		if idx := strings.Index(timePart, " "); idx >= 0 {
 			timePart = timePart[idx+1:]
+		}
+		// 去掉秒 "09:35:00" → "09:35"
+		if len(timePart) > 5 {
+			timePart = timePart[:5]
 		}
 
 		result.Points = append(result.Points, IntradayPoint{
 			Time:  timePart,
-			Price: parseSinaFloat(parts[1]), // 收盘价（5分钟K线的收盘）
-			Open:  parseSinaFloat(parts[2]),
-			High:  parseSinaFloat(parts[3]),
-			Low:   parseSinaFloat(parts[4]),
-			Vol:   parseSinaFloat(parts[5]),
+			Price: parseSinaFloat(bar.Close),
+			Open:  parseSinaFloat(bar.Open),
+			High:  parseSinaFloat(bar.High),
+			Low:   parseSinaFloat(bar.Low),
+			Vol:   parseSinaFloat(bar.Volume),
 		})
 	}
 
-	s.setCache(cacheKey, result, 30*time.Second) // 分时数据缓存 30 秒
+	// 计算昨收：取第一个点的开盘价作为近似昨收（新浪不直接提供）
+	if len(result.Points) > 0 {
+		result.PreClose = result.Points[0].Open
+	}
+
+	s.setCache(cacheKey, result, 30*time.Second)
 	return result, nil
 }
