@@ -26,11 +26,14 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 	authSvc := service.NewAuthService(userRepo, jwtSecret)
 	eggSvc := service.NewEggService(eggRepo)
 	marketSvc := service.NewMarketService()
+	portfolioRepo := repository.NewPortfolioRepository(db)
+	portfolioSvc := service.NewPortfolioService(portfolioRepo, marketSvc)
 
 	// Controller 层
 	authCtrl := controller.NewAuthController(authSvc)
 	eggCtrl := controller.NewEggController(eggSvc)
 	marketCtrl := controller.NewMarketController(marketSvc)
+	portfolioCtrl := controller.NewPortfolioController(portfolioSvc)
 
 	// ── 路由注册 ──────────────────────────────────────────────
 	api := r.Group("/api/v1")
@@ -61,6 +64,17 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 			market.GET("/fund-distribution", marketCtrl.GetFundDistribution)
 			market.GET("/fund-quotes", marketCtrl.GetFundQuotes)
 			market.GET("/intraday", marketCtrl.GetIntraday)
+		}
+
+		// 虚拟养鸡（基）— 模拟盘
+		portfolio := api.Group("/portfolio")
+		{
+			portfolio.POST("/account", portfolioCtrl.CreateAccount)
+			portfolio.GET("/account", portfolioCtrl.GetAccount)
+			portfolio.GET("/positions", portfolioCtrl.GetPositions)
+			portfolio.POST("/buy", portfolioCtrl.Buy)
+			portfolio.GET("/orders/pending", portfolioCtrl.GetPendingOrders)
+			portfolio.GET("/transactions", portfolioCtrl.GetTransactions)
 		}
 	}
 
