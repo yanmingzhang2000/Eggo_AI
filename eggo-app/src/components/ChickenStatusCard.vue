@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useEggStore } from '@/stores/egg'
-import type { ChickenState } from '@/types/egg'
 
 const store = useEggStore()
+const loading = computed(() => store.loading)
 const status = computed(() => store.chickenStatus)
 const decision = computed(() => store.decision)
 
-const stateConfig: Record<ChickenState, { bg: string; glow: string; border: string }> = {
+const stateConfig: Record<string, { bg: string; glow: string; border: string }> = {
+  sleeping: {
+    bg: 'linear-gradient(135deg, #12121a 0%, #0a0a0a 100%)',
+    glow: '0 0 40px rgba(150, 140, 255, 0.06)',
+    border: '1px solid rgba(150, 140, 255, 0.15)',
+  },
   laying: {
     bg: 'linear-gradient(135deg, #1a1a0a 0%, #0a0a0a 100%)',
     glow: '0 0 60px rgba(255, 215, 0, 0.15)',
@@ -30,38 +35,45 @@ const stateConfig: Record<ChickenState, { bg: string; glow: string; border: stri
   },
 }
 
+const displayStatus = computed(() => {
+  if (status.value) return status.value
+  return {
+    overallState: 'sleeping',
+    stateEmoji: '🐔💤',
+    stateDesc: '母鸡正在睡觉，请稍候...',
+    alertLevel: 'none' as const,
+    alertMessage: '',
+  }
+})
+
 const currentConfig = computed(() => {
-  return stateConfig[status.value?.overallState || 'resting']
+  return stateConfig[displayStatus.value.overallState] || stateConfig.resting
 })
 </script>
 
 <template>
   <div
-    v-if="status"
     class="card"
+    :class="{ 'card--loading': loading }"
     :style="{
       background: currentConfig.bg,
       boxShadow: currentConfig.glow,
       border: currentConfig.border,
     }"
   >
-    <!-- 顶部 -->
     <div class="card__header">
-      <span class="card__emoji">{{ status.stateEmoji }}</span>
-      <span class="card__rule-tag">{{ decision?.ruleName || '观察中' }}</span>
+      <span class="card__emoji">{{ displayStatus.stateEmoji }}</span>
+      <span class="card__rule-tag">{{ decision?.ruleName || '🌙 睡觉中' }}</span>
     </div>
 
-    <!-- 状态描述 -->
-    <p class="card__state-desc">{{ status.stateDesc }}</p>
+    <p class="card__state-desc">{{ displayStatus.stateDesc }}</p>
 
-    <!-- 决策建议 -->
     <div v-if="decision" class="card__footer">
       <div class="card__suggestion-box">
         <span class="card__suggestion-icon">💡</span>
         <span class="card__suggestion-text">{{ decision.suggestion }}</span>
       </div>
 
-      <!-- 置信度条 -->
       <div class="card__confidence">
         <div class="card__confidence-bar">
           <div
@@ -75,9 +87,8 @@ const currentConfig = computed(() => {
       </div>
     </div>
 
-    <!-- 告警指示器 -->
     <div
-      v-if="status.alertLevel !== 'none'"
+      v-if="!loading && displayStatus.alertLevel !== 'none'"
       class="card__alert-dot"
     ></div>
   </div>
@@ -186,6 +197,15 @@ const currentConfig = computed(() => {
   font-size: 12px;
   color: var(--text-tertiary);
   flex-shrink: 0;
+}
+
+.card--loading {
+  animation: breathe 2s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
 }
 
 .card__alert-dot {

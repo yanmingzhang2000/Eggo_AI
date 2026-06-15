@@ -57,21 +57,14 @@ function handleLogout() {
       </div>
     </header>
 
-    <!-- 加载态 -->
-    <div v-if="eggStore.loading && !eggStore.hasData" class="loading-wrap">
-      <div class="loading-spinner"></div>
-      <p class="loading-text">正在计算母鸡状态...</p>
-    </div>
-
-    <!-- 错误态 -->
-    <div v-else-if="eggStore.error && !eggStore.hasData" class="error-wrap">
-      <p class="error-emoji">⚠️</p>
-      <p class="error-text">{{ eggStore.error }}</p>
-      <button class="error-btn" @click="eggStore.fetchEggStatus">重试</button>
-    </div>
-
     <!-- 主内容 -->
-    <main v-else class="main">
+    <main class="main">
+      <!-- 首次加载错误 -->
+      <div v-if="eggStore.error && !eggStore.hasData" class="error-wrap">
+        <p class="error-emoji">⚠️</p>
+        <p class="error-text">{{ eggStore.error }}</p>
+        <button class="error-btn" @click="eggStore.fetchEggStatus">重试</button>
+      </div>
       <!-- 顶部导航 Tab -->
       <div class="view-tabs">
         <button
@@ -199,28 +192,12 @@ function handleLogout() {
   to { transform: rotate(360deg); }
 }
 
-.loading-wrap,
 .error-wrap {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding-top: 200px;
-}
-
-.loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid var(--border-color);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-.loading-text {
-  margin-top: 16px;
-  font-size: 14px;
-  color: var(--text-tertiary);
 }
 
 .error-emoji {
