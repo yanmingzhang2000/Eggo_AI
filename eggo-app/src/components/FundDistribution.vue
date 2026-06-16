@@ -25,6 +25,10 @@ interface FundDistribution {
 
 const eggStore = useEggStore()
 
+const emit = defineEmits<{
+  (e: 'viewDetail', fundCode: string, fundName: string): void
+}>()
+
 const dist = ref<FundDistribution | null>(null)
 const watchlistQuotes = ref<FundQuote[]>([])
 const loading = ref(true)
@@ -146,11 +150,12 @@ const sentiment = computed(() => {
     <div v-if="watchlistCodes.length > 0" class="watchlist-section">
       <div class="section-label">我的自选</div>
       <div class="watchlist-grid">
-        <div
-          v-for="q in watchlistQuotes"
-          :key="q.code"
-          class="wl-card"
-        >
+          <div
+              v-for="q in watchlistQuotes"
+              :key="q.code"
+              class="wl-card wl-card--clickable"
+              @click="emit('viewDetail', q.code, q.name)"
+          >
           <div class="wl-card__top">
             <span class="wl-card__name">{{ q.name }}</span>
             <span class="wl-card__code">{{ q.code }}</span>
@@ -225,7 +230,8 @@ const sentiment = computed(() => {
             <div
               v-for="f in dist.topFunds"
               :key="f.code"
-              class="rank-item"
+              class="rank-item rank-item--clickable"
+              @click="emit('viewDetail', f.code, f.name)"
             >
               <span class="rank-item__name">{{ f.name }}</span>
               <span class="rank-item__return" style="color:#ff4d4f">{{ formatReturn(f.estReturn) }}</span>
@@ -236,7 +242,8 @@ const sentiment = computed(() => {
             <div
               v-for="f in dist.flopFunds"
               :key="f.code"
-              class="rank-item"
+              class="rank-item rank-item--clickable"
+              @click="emit('viewDetail', f.code, f.name)"
             >
               <span class="rank-item__name">{{ f.name }}</span>
               <span class="rank-item__return" style="color:#00d68f">{{ formatReturn(f.estReturn) }}</span>
@@ -344,11 +351,16 @@ const sentiment = computed(() => {
   border: 1px solid #2a2a2a;
   border-radius: 14px;
   padding: 14px;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, transform 0.15s;
 }
 
-.wl-card:hover {
+.wl-card--clickable {
+  cursor: pointer;
+}
+
+.wl-card--clickable:hover {
   border-color: #f7ba1e;
+  transform: translateY(-1px);
 }
 
 .wl-card__top {
@@ -504,6 +516,15 @@ const sentiment = computed(() => {
   align-items: center;
   padding: 5px 0;
   border-bottom: 1px solid #1e1e1e;
+  transition: opacity 0.15s;
+}
+
+.rank-item--clickable {
+  cursor: pointer;
+}
+
+.rank-item--clickable:hover {
+  opacity: 0.8;
 }
 
 .rank-item__name {

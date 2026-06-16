@@ -5,6 +5,10 @@ import { useEggStore } from '@/stores/egg'
 const store = useEggStore()
 const metrics = computed(() => store.todayMetrics)
 
+const emit = defineEmits<{
+  (e: 'viewDetail', fundCode: string, fundName: string): void
+}>()
+
 function returnColor(val: number): string {
   if (val > 0) return '#ff4d4f'
   if (val < 0) return '#00c3ff'
@@ -16,6 +20,10 @@ function returnArrow(val: number): string {
   if (val < 0) return '↓'
   return '→'
 }
+
+function handleClick(m: { fundCode: string; fundName: string }) {
+  emit('viewDetail', m.fundCode, m.fundName)
+}
 </script>
 
 <template>
@@ -26,7 +34,7 @@ function returnArrow(val: number): string {
     </div>
 
     <div class="metrics-grid">
-      <div v-for="m in metrics" :key="m.fundCode" class="metric-card">
+      <div v-for="m in metrics" :key="m.fundCode" class="metric-card metric-card--clickable" @click="handleClick(m)">
         <div class="metric-card__top">
           <span class="metric-card__name">{{ m.fundName }}</span>
           <span class="metric-card__code">{{ m.fundCode }}</span>
@@ -91,6 +99,16 @@ function returnArrow(val: number): string {
   border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 20px;
+  transition: border-color 0.2s, transform 0.15s;
+}
+
+.metric-card--clickable {
+  cursor: pointer;
+}
+
+.metric-card--clickable:hover {
+  border-color: #f7ba1e;
+  transform: translateY(-1px);
 }
 
 .metric-card__top {

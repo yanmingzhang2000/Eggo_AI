@@ -9,8 +9,10 @@ import FundDistribution from '@/components/FundDistribution.vue'
 import NewsFeed from '@/components/NewsFeed.vue'
 import MarketDashboard from '@/components/MarketDashboard.vue'
 import Portfolio from '@/components/portfolio/Portfolio.vue'
+import FundDetail from '@/components/FundDetail.vue'
 
-const activeView = ref<'home' | 'portfolio'>('home')
+const activeView = ref<'home' | 'portfolio' | 'fundDetail'>('home')
+const selectedFund = ref<{ code: string; name: string } | null>(null)
 
 const authStore = useAuthStore()
 const eggStore = useEggStore()
@@ -29,6 +31,16 @@ function handleRefresh() {
 
 function handleLogout() {
   authStore.logout()
+}
+
+function handleViewDetail(fundCode: string, fundName: string) {
+  selectedFund.value = { code: fundCode, name: fundName }
+  activeView.value = 'fundDetail'
+}
+
+function handleBackFromDetail() {
+  selectedFund.value = null
+  activeView.value = 'home'
 }
 </script>
 
@@ -77,17 +89,25 @@ function handleLogout() {
         >🐔 我的鸡笼</button>
       </div>
 
+      <!-- 基金详情 -->
+      <FundDetail
+        v-if="activeView === 'fundDetail' && selectedFund"
+        :fund-code="selectedFund.code"
+        :fund-name="selectedFund.name"
+        @back="handleBackFromDetail"
+      />
+
       <!-- 行情看板 -->
-      <template v-if="activeView === 'home'">
+      <template v-else-if="activeView === 'home'">
         <MarketDashboard />
-        <FundDistribution />
+        <FundDistribution @view-detail="handleViewDetail" />
         <ChickenStatusCard />
-        <FundMetrics />
+        <FundMetrics @view-detail="handleViewDetail" />
         <NewsFeed />
       </template>
 
       <!-- 我的鸡笼 -->
-      <Portfolio v-else />
+      <Portfolio v-else-if="activeView === 'portfolio'" />
     </main>
 
     <!-- 底部 -->

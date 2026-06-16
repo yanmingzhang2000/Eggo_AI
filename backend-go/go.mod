@@ -8,7 +8,7 @@ require (
 	github.com/shopspring/decimal v1.4.0
 	golang.org/x/crypto v0.31.0
 	gorm.io/driver/postgres v1.6.0
-	gorm.io/gorm v1.25.12
+	gorm.io/gorm v1.30.0
 )
 
 require (

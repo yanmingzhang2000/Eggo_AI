@@ -21,6 +21,8 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 	// Repository 层
 	userRepo := repository.NewUserRepository(db)
 	eggRepo := repository.NewEggRepository(db)
+	fundRepo := repository.NewFundRepository(db)
+	navRepo := repository.NewNavRepository(db)
 
 	// Service 层
 	authSvc := service.NewAuthService(userRepo, jwtSecret)
@@ -28,12 +30,14 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 	marketSvc := service.NewMarketService()
 	portfolioRepo := repository.NewPortfolioRepository(db)
 	portfolioSvc := service.NewPortfolioService(portfolioRepo, marketSvc)
+	fundSvc := service.NewFundService(fundRepo, navRepo, eggRepo)
 
 	// Controller 层
 	authCtrl := controller.NewAuthController(authSvc)
 	eggCtrl := controller.NewEggController(eggSvc)
 	marketCtrl := controller.NewMarketController(marketSvc)
 	portfolioCtrl := controller.NewPortfolioController(portfolioSvc)
+	fundCtrl := controller.NewFundController(fundSvc)
 
 	// ── 路由注册 ──────────────────────────────────────────────
 	api := r.Group("/api/v1")
@@ -64,6 +68,14 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 			market.GET("/fund-distribution", marketCtrl.GetFundDistribution)
 			market.GET("/fund-quotes", marketCtrl.GetFundQuotes)
 			market.GET("/intraday", marketCtrl.GetIntraday)
+		}
+
+		// 基金详情（公开接口）
+		fund := api.Group("/funds")
+		{
+			fund.GET("/:code/detail", fundCtrl.GetDetail)
+			fund.GET("/:code/nav-history", fundCtrl.GetNavHistory)
+			fund.GET("/:code/analysis", fundCtrl.GetAnalysis)
 		}
 
 		// 虚拟养鸡（基）— 模拟盘（多鸡笼）— 需要登录，游客不可访问
