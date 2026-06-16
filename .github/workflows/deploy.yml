@@ -34,8 +34,8 @@ jobs:
         working-directory: eggo-app
         run: npm run build
         env:
+          CI: true
           VITE_API_BASE_URL: https://eggo-ai.onrender.com/api/v1
-          GITHUB_ACTIONS: true
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
