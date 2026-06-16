@@ -143,10 +143,7 @@ func (s *FundService) GetNavHistory(fundCode string, days int) (*dto.NavHistoryR
 		return nil, err
 	}
 
-	navs, err := s.navRepo.FindByFundCodeOrderDate(fundCode, days)
-	if err != nil {
-		return nil, fmt.Errorf("获取净值数据失败: %w", err)
-	}
+	navs, _ := s.navRepo.FindByFundCodeOrderDate(fundCode, days)
 
 	points := make([]dto.NavPoint, 0, len(navs))
 	for _, n := range navs {
@@ -161,6 +158,25 @@ func (s *FundService) GetNavHistory(fundCode string, days int) (*dto.NavHistoryR
 			p.DailyReturn = n.DailyReturn.InexactFloat64()
 		}
 		points = append(points, p)
+	}
+
+	// 数据库没有历史数据时，实时从天天基金拉取
+	if len(points) < 2 {
+		log.Printf("[FundService] %s 数据库无净值历史，实时拉取", fundCode)
+		livePoints, fetchErr := s.market.FetchFundNavHistory(fundCode, days)
+		if fetchErr != nil {
+			log.Printf("[FundService] 实时拉取净值历史失败: %v", fetchErr)
+		} else {
+			points = make([]dto.NavPoint, 0, len(livePoints))
+			for _, p := range livePoints {
+				points = append(points, dto.NavPoint{
+					Date:        p.Date,
+					UnitNav:     p.UnitNav,
+					AccNav:      p.AccNav,
+					DailyReturn: p.DailyReturn,
+				})
+			}
+		}
 	}
 
 	return &dto.NavHistoryResponse{
@@ -179,16 +195,18 @@ func (s *FundService) AnalyzeFund(fundCode string) (*dto.FundAnalysisResponse, e
 
 	today := time.Now()
 
-	// 获取今日指标
+	// 获取今日指标（先查数据库）
 	metric, err := s.eggRepo.GetDailyMetricsByCodeAndDate(fundCode, today)
 	if err != nil {
 		metrics, _ := s.eggRepo.GetRecentMetrics(fundCode, 1)
 		if len(metrics) > 0 {
 			metric = &metrics[0]
-		} else {
-			// 无数据，返回观察建议
-			return s.buildObserveResponse(fund), nil
 		}
+	}
+
+	// 没有数据库指标，用实时估值 + 历史净值构造一个临时 metric
+	if metric == nil {
+		return s.buildLiveAnalysis(fund, fundCode), nil
 	}
 
 	// 获取相关新闻
@@ -203,6 +221,79 @@ func (s *FundService) AnalyzeFund(fundCode string) (*dto.FundAnalysisResponse, e
 		Analysis:    analysis,
 		GeneratedAt: time.Now().Format(time.RFC3339),
 	}, nil
+}
+
+// buildLiveAnalysis 无数据库指标时，用实时估值做简单分析
+func (s *FundService) buildLiveAnalysis(fund *model.Fund, fundCode string) *dto.FundAnalysisResponse {
+	// 拉实时估值
+	quotes, _ := s.market.FetchFundQuotes([]string{fundCode})
+	dailyReturn := 0.0
+	if len(quotes) > 0 {
+		dailyReturn = quotes[0].EstReturn
+	}
+
+	// 拉近20天历史净值判断趋势
+	history, _ := s.market.FetchFundNavHistory(fundCode, 20)
+	trendLabel, trendColor := s.judgeTrendFromPoints(history)
+
+	// 用实时涨跌幅触发铁律一/三的简化判断
+	var signalType, signalText, signalEmoji, reason string
+	var confidence float64
+	var suggestions []string
+
+	switch {
+	case dailyReturn <= -3.0:
+		signalType = "buy"
+		signalText = "建议关注"
+		signalEmoji = "🌧️🐔"
+		confidence = 0.65
+		reason = fmt.Sprintf("今日估算跌幅%.2f%%，跌幅较大，可关注低吸机会（基于实时估值，非正式数据）", dailyReturn)
+		suggestions = []string{
+			"今日跌幅较大，可小额试探性买入",
+			"建议分批操作，不要一次性重仓",
+			"注意设置止损线控制风险",
+		}
+	case dailyReturn >= 3.0:
+		signalType = "hold"
+		signalText = "继续持有"
+		signalEmoji = "🐔🎵"
+		confidence = 0.60
+		reason = fmt.Sprintf("今日估算涨幅%.2f%%，行情较好，持有为主（基于实时估值，非正式数据）", dailyReturn)
+		suggestions = []string{
+			"今日表现强势，持有观望",
+			"可设置回撤止盈线",
+			"避免追高买入",
+		}
+	default:
+		signalType = "observe"
+		signalText = "继续观察"
+		signalEmoji = "👁️"
+		confidence = 0.45
+		reason = fmt.Sprintf("今日估算涨跌幅%.2f%%，波动平稳（基于实时估值，仅供参考）", dailyReturn)
+		suggestions = []string{
+			"当前无明确买卖信号",
+			"建议维持现有仓位，继续观察",
+			"关注后续净值变化",
+		}
+	}
+
+	return &dto.FundAnalysisResponse{
+		FundCode: fund.FundCode,
+		FundName: fund.FundName,
+		Analysis: dto.FundAnalysis{
+			FundCode:    fund.FundCode,
+			FundName:    fund.FundName,
+			SignalType:  signalType,
+			SignalText:  signalText,
+			SignalEmoji: signalEmoji,
+			Confidence:  confidence,
+			Reason:      reason,
+			TrendLabel:  trendLabel,
+			TrendColor:  trendColor,
+			Suggestions: suggestions,
+		},
+		GeneratedAt: time.Now().Format(time.RFC3339),
+	}
 }
 
 // evaluateFundTrend 评估基金趋势并生成买卖建议
@@ -321,9 +412,36 @@ func (s *FundService) evaluateFundTrend(metric model.FundDailyMetrics, newsList 
 	}
 }
 
+// judgeTrendFromPoints 从实时拉取的历史净值判断趋势
+func (s *FundService) judgeTrendFromPoints(points []FundNavPoint) (string, string) {
+	if len(points) < 5 {
+		return "数据不足", "#787878"
+	}
+	first := points[0].UnitNav
+	last := points[len(points)-1].UnitNav
+	mid := points[len(points)/2].UnitNav
+	if first == 0 {
+		return "数据异常", "#787878"
+	}
+	shortPct := (last - mid) / mid * 100
+	totalPct := (last - first) / first * 100
+	if shortPct > 3.0 && totalPct > 5.0 {
+		return "上升期", "#ff4d4f"
+	}
+	if shortPct < -3.0 && totalPct < -5.0 {
+		return "下跌期", "#00d68f"
+	}
+	if shortPct > 1.0 || totalPct > 2.0 {
+		return "震荡偏涨", "#f7ba1e"
+	}
+	if shortPct < -1.0 || totalPct < -2.0 {
+		return "震荡偏跌", "#f7ba1e"
+	}
+	return "平稳期", "#787878"
+}
+
 // judgeTrend 根据近期净值数据判断趋势
-func (s *FundService) judgeTrend(metrics []model.FundDailyMetrics) (string, string) {
-	if len(metrics) < 5 {
+func (s *FundService) judgeTrend(metrics []model.FundDailyMetrics) (string, string) {	if len(metrics) < 5 {
 		return "数据不足", "#787878"
 	}
 

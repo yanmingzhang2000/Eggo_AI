@@ -687,6 +687,107 @@ func (s *MarketService) FetchFundQuotes(codes []string) ([]FundQuote, error) {
 	return results, nil
 }
 
+// ─── 分时指数 ────────────────────────────────────────────────────────────
+
+// FundNavPoint 单条历史净值
+type FundNavPoint struct {
+	Date        string  `json:"date"`
+	UnitNav     float64 `json:"unitNav"`
+	AccNav      float64 `json:"accNav"`
+	DailyReturn float64 `json:"dailyReturn"`
+}
+
+// FetchFundNavHistory 从天天基金接口拉取基金历史净值
+// 接口：https://fund.eastmoney.com/f10/F10DataApi.aspx?type=lsjz&code=007339&page=1&sdate=&edate=&per=120
+func (s *MarketService) FetchFundNavHistory(code string, days int) ([]FundNavPoint, error) {
+	cacheKey := fmt.Sprintf("nav_history_%s_%d", code, days)
+	if cached := s.getCache(cacheKey); cached != nil {
+		return cached.([]FundNavPoint), nil
+	}
+
+	// 计算起始日期（多拿一点）
+	startDate := time.Now().AddDate(0, 0, -days*2).Format("2006-01-02")
+	endDate := time.Now().Format("2006-01-02")
+	per := days
+	if per > 200 {
+		per = 200
+	}
+
+	apiURL := fmt.Sprintf(
+		"https://fund.eastmoney.com/f10/F10DataApi.aspx?type=lsjz&code=%s&page=1&sdate=%s&edate=%s&per=%d",
+		code, startDate, endDate, per,
+	)
+
+	content, err := s.proxyFetchText(apiURL)
+	if err != nil {
+		return nil, fmt.Errorf("fetch nav history failed: %w", err)
+	}
+
+	// 响应格式：var apidata={content:"<table>...</table>",records:120,...}
+	// 从 records 字段判断有没有数据，从 content 解析 HTML 表格太脆
+	// 改用 JSON 接口：https://api.fund.eastmoney.com/f10/lsjz
+	apiURL2 := fmt.Sprintf(
+		"https://api.fund.eastmoney.com/f10/lsjz?fundCode=%s&pageIndex=1&pageSize=%d&startDate=%s&endDate=%s&callback=cb",
+		code, per, startDate, endDate,
+	)
+	content, err = s.proxyFetchText(apiURL2)
+	if err != nil {
+		return nil, fmt.Errorf("fetch nav history json failed: %w", err)
+	}
+
+	// 去掉 callback 包裹
+	jsonStart := strings.Index(content, "(")
+	jsonEnd := strings.LastIndex(content, ")")
+	if jsonStart >= 0 && jsonEnd > jsonStart {
+		content = content[jsonStart+1 : jsonEnd]
+	}
+
+	var result struct {
+		Data struct {
+			LSJZList []struct {
+				FSRQ string `json:"FSRQ"` // 净值日期
+				DWJZ string `json:"DWJZ"` // 单位净值
+				LJJZ string `json:"LJJZ"` // 累计净值
+				JZZZL string `json:"JZZZL"` // 日增长率 %
+			} `json:"LSJZList"`
+		} `json:"Data"`
+	}
+
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return nil, fmt.Errorf("parse nav history failed: %w", err)
+	}
+
+	list := result.Data.LSJZList
+	// 天天基金返回的是降序（最新在前），反转为升序
+	points := make([]FundNavPoint, 0, len(list))
+	for i := len(list) - 1; i >= 0; i-- {
+		item := list[i]
+		unitNav := parseSinaFloat(item.DWJZ)
+		accNav := parseSinaFloat(item.LJJZ)
+		dailyReturn := parseSinaFloat(item.JZZZL)
+		if unitNav == 0 {
+			continue
+		}
+		points = append(points, FundNavPoint{
+			Date:        item.FSRQ,
+			UnitNav:     unitNav,
+			AccNav:      accNav,
+			DailyReturn: dailyReturn,
+		})
+	}
+
+	// 截取最近 days 条
+	if len(points) > days {
+		points = points[len(points)-days:]
+	}
+
+	if len(points) > 0 {
+		s.setCache(cacheKey, points, 30*time.Minute)
+	}
+
+	return points, nil
+}
+
 // FundBasicInfo 基金基础信息（用于自动播种）
 type FundBasicInfo struct {
 	Code      string
