@@ -19,23 +19,56 @@ type FundService struct {
 	fundRepo    *repository.FundRepository
 	navRepo     *repository.NavRepository
 	eggRepo     *repository.EggRepository
+	market      *MarketService
 }
 
 // NewFundService 创建 FundService 实例
-func NewFundService(fundRepo *repository.FundRepository, navRepo *repository.NavRepository, eggRepo *repository.EggRepository) *FundService {
+func NewFundService(fundRepo *repository.FundRepository, navRepo *repository.NavRepository, eggRepo *repository.EggRepository, market *MarketService) *FundService {
 	return &FundService{
 		fundRepo: fundRepo,
 		navRepo:  navRepo,
 		eggRepo:  eggRepo,
+		market:   market,
 	}
+}
+
+// ensureFund 确保基金在 funds 表里存在，不存在则从天天基金 API 自动播种
+func (s *FundService) ensureFund(fundCode string) (*model.Fund, error) {
+	fund, err := s.fundRepo.FindByCode(fundCode)
+	if err == nil {
+		return fund, nil
+	}
+
+	// 不存在，尝试从外部 API 获取基本信息
+	log.Printf("[FundService] 基金 %s 不在数据库，尝试自动播种", fundCode)
+	info, fetchErr := s.market.FetchFundInfo(fundCode)
+	if fetchErr != nil {
+		return nil, fmt.Errorf("基金 %s 不存在且无法获取信息: %w", fundCode, fetchErr)
+	}
+
+	fundType := info.FundType
+	newFund := &model.Fund{
+		FundCode: info.Code,
+		FundName: info.Name,
+		FundType: &fundType,
+		Status:   1,
+	}
+	if upsertErr := s.fundRepo.Upsert(newFund); upsertErr != nil {
+		log.Printf("[FundService] 播种基金 %s 失败: %v", fundCode, upsertErr)
+		// 即使写库失败，也返回内存里的数据，不阻塞查询
+		return newFund, nil
+	}
+
+	log.Printf("[FundService] 基金 %s (%s) 播种成功", fundCode, info.Name)
+	return newFund, nil
 }
 
 // GetFundDetail 获取基金详情
 func (s *FundService) GetFundDetail(fundCode string) (*dto.FundDetailResponse, error) {
-	// 获取基金基础信息
-	fund, err := s.fundRepo.FindByCode(fundCode)
+	// 获取基金基础信息（不存在则自动播种）
+	fund, err := s.ensureFund(fundCode)
 	if err != nil {
-		return nil, fmt.Errorf("基金不存在: %w", err)
+		return nil, err
 	}
 
 	// 获取今日指标
@@ -91,6 +124,13 @@ func (s *FundService) GetFundDetail(fundCode string) (*dto.FundDetailResponse, e
 
 		// 计算连续下跌天数
 		resp.ConsecutiveDown = s.calcConsecutiveDown(fundCode)
+	} else {
+		// metric 为空时，尝试从实时估值接口获取
+		quotes, _ := s.market.FetchFundQuotes([]string{fundCode})
+		if len(quotes) > 0 {
+			resp.UnitNav = quotes[0].LastNav
+			resp.DailyReturn = quotes[0].EstReturn
+		}
 	}
 
 	return resp, nil
@@ -98,9 +138,9 @@ func (s *FundService) GetFundDetail(fundCode string) (*dto.FundDetailResponse, e
 
 // GetNavHistory 获取基金净值历史
 func (s *FundService) GetNavHistory(fundCode string, days int) (*dto.NavHistoryResponse, error) {
-	fund, err := s.fundRepo.FindByCode(fundCode)
+	fund, err := s.ensureFund(fundCode)
 	if err != nil {
-		return nil, fmt.Errorf("基金不存在: %w", err)
+		return nil, err
 	}
 
 	navs, err := s.navRepo.FindByFundCodeOrderDate(fundCode, days)
@@ -132,9 +172,9 @@ func (s *FundService) GetNavHistory(fundCode string, days int) (*dto.NavHistoryR
 
 // AnalyzeFund 对单只基金执行三铁律分析
 func (s *FundService) AnalyzeFund(fundCode string) (*dto.FundAnalysisResponse, error) {
-	fund, err := s.fundRepo.FindByCode(fundCode)
+	fund, err := s.ensureFund(fundCode)
 	if err != nil {
-		return nil, fmt.Errorf("基金不存在: %w", err)
+		return nil, err
 	}
 
 	today := time.Now()

@@ -26,6 +26,20 @@ func (r *FundRepository) FindByCode(code string) (*model.Fund, error) {
 	return &fund, nil
 }
 
+// Upsert 插入或更新基金基础信息（按 fund_code 唯一键）
+func (r *FundRepository) Upsert(fund *model.Fund) error {
+	return r.db.
+		Where(model.Fund{FundCode: fund.FundCode}).
+		Assign(model.Fund{
+			FundName:  fund.FundName,
+			FundType:  fund.FundType,
+			Manager:   fund.Manager,
+			Custodian: fund.Custodian,
+			Status:    1,
+		}).
+		FirstOrCreate(fund).Error
+}
+
 // List 基金列表查询
 func (r *FundRepository) List(query interface{}) ([]model.Fund, error) {
 	var funds []model.Fund

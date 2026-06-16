@@ -30,7 +30,7 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 	eggSvc := service.NewEggService(eggRepo, marketSvc)
 	portfolioRepo := repository.NewPortfolioRepository(db)
 	portfolioSvc := service.NewPortfolioService(portfolioRepo, marketSvc)
-	fundSvc := service.NewFundService(fundRepo, navRepo, eggRepo)
+	fundSvc := service.NewFundService(fundRepo, navRepo, eggRepo, marketSvc)
 
 	// Controller 层
 	authCtrl := controller.NewAuthController(authSvc)

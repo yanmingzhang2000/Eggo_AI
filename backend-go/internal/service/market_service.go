@@ -687,7 +687,76 @@ func (s *MarketService) FetchFundQuotes(codes []string) ([]FundQuote, error) {
 	return results, nil
 }
 
-// ─── 分时指数 ────────────────────────────────────────────────────────────
+// FundBasicInfo 基金基础信息（用于自动播种）
+type FundBasicInfo struct {
+	Code      string
+	Name      string
+	FundType  string
+}
+
+// FetchFundInfo 从天天基金搜索接口获取基金基础信息
+// 接口：https://fund.eastmoney.com/js/fundcode_search.js
+// 返回格式：var r = [["000001","HXCZHH","华夏成长混合","混合型","HUAXIACHENGZHANGHUNHE"],...];
+func (s *MarketService) FetchFundInfo(code string) (*FundBasicInfo, error) {
+	cacheKey := "fundinfo_" + code
+	if cached := s.getCache(cacheKey); cached != nil {
+		return cached.(*FundBasicInfo), nil
+	}
+
+	// 先尝试从 fundgz 接口获取名称（已有 FetchFundQuotes 的逻辑）
+	quotes, err := s.FetchFundQuotes([]string{code})
+	if err == nil && len(quotes) > 0 && quotes[0].Name != "" {
+		info := &FundBasicInfo{
+			Code: code,
+			Name: quotes[0].Name,
+		}
+		s.setCache(cacheKey, info, 24*time.Hour)
+		return info, nil
+	}
+
+	// fallback：天天基金搜索接口
+	apiURL := fmt.Sprintf(
+		"https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?callback=cb&m=1&key=%s",
+		url.QueryEscape(code),
+	)
+	content, err := s.proxyFetchText(apiURL)
+	if err != nil {
+		return nil, fmt.Errorf("fetch fund info failed: %w", err)
+	}
+
+	// 响应格式：cb({"Datas":[{"CODE":"007339","NAME":"...","FundType":"..."}]})
+	jsonStart := strings.Index(content, "(")
+	jsonEnd := strings.LastIndex(content, ")")
+	if jsonStart < 0 || jsonEnd <= jsonStart {
+		return nil, fmt.Errorf("unexpected fund search response")
+	}
+	jsonStr := content[jsonStart+1 : jsonEnd]
+
+	var result struct {
+		Datas []struct {
+			Code     string `json:"CODE"`
+			Name     string `json:"NAME"`
+			FundType string `json:"FundType"`
+		} `json:"Datas"`
+	}
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		return nil, fmt.Errorf("parse fund search response failed: %w", err)
+	}
+
+	for _, d := range result.Datas {
+		if d.Code == code {
+			info := &FundBasicInfo{
+				Code:     d.Code,
+				Name:     d.Name,
+				FundType: d.FundType,
+			}
+			s.setCache(cacheKey, info, 24*time.Hour)
+			return info, nil
+		}
+	}
+
+	return nil, fmt.Errorf("fund %s not found in search results", code)
+}
 
 // IntradayPoint 分时数据点
 type IntradayPoint struct {
