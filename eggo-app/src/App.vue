@@ -13,6 +13,7 @@ import FundDetail from '@/components/FundDetail.vue'
 
 const activeView = ref<'home' | 'portfolio' | 'fundDetail'>('home')
 const selectedFund = ref<{ code: string; name: string } | null>(null)
+const searchCode = ref('')
 
 const authStore = useAuthStore()
 const eggStore = useEggStore()
@@ -41,6 +42,14 @@ function handleViewDetail(fundCode: string, fundName: string) {
 function handleBackFromDetail() {
   selectedFund.value = null
   activeView.value = 'home'
+}
+
+function handleSearchFund() {
+  const code = searchCode.value.trim()
+  if (!code) return
+  selectedFund.value = { code, name: code }
+  activeView.value = 'fundDetail'
+  searchCode.value = ''
 }
 </script>
 
@@ -99,6 +108,20 @@ function handleBackFromDetail() {
 
       <!-- 行情看板 -->
       <template v-else-if="activeView === 'home'">
+        <!-- 基金搜索入口 -->
+        <div class="fund-search">
+          <input
+            v-model="searchCode"
+            class="fund-search__input"
+            type="text"
+            placeholder="输入基金代码直接查看详情，如 000001"
+            maxlength="6"
+            @keyup.enter="handleSearchFund"
+          />
+          <button class="fund-search__btn" @click="handleSearchFund" :disabled="!searchCode.trim()">
+            查看
+          </button>
+        </div>
         <MarketDashboard />
         <FundDistribution @view-detail="handleViewDetail" />
         <ChickenStatusCard />
@@ -295,5 +318,57 @@ function handleBackFromDetail() {
   font-size: 12px;
   border-top: 1px solid var(--border-color);
   margin-top: 48px;
+}
+
+/* 基金搜索入口 */
+.fund-search {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.fund-search__input {
+  flex: 1;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: var(--font-mono);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.fund-search__input::placeholder {
+  color: var(--text-tertiary);
+  font-family: inherit;
+}
+
+.fund-search__input:focus {
+  border-color: rgba(255, 215, 0, 0.5);
+}
+
+.fund-search__btn {
+  padding: 10px 18px;
+  background: rgba(255, 215, 0, 0.12);
+  border: 1px solid rgba(255, 215, 0, 0.35);
+  border-radius: 10px;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.fund-search__btn:hover:not(:disabled) {
+  background: rgba(255, 215, 0, 0.22);
+  border-color: rgba(255, 215, 0, 0.6);
+}
+
+.fund-search__btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 </style>

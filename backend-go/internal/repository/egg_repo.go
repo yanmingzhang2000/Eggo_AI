@@ -128,6 +128,17 @@ func (r *EggRepository) GetPositivePolicyNews(date time.Time) ([]model.AiNews, e
 	return news, err
 }
 
+// GetWatchlistFundsByUserID 获取用户自选基金的基金代码和名称
+func (r *EggRepository) GetWatchlistFundsByUserID(userID string) ([]model.Fund, error) {
+	var funds []model.Fund
+	err := r.db.
+		Joins("JOIN watchlist ON watchlist.fund_id = funds.id").
+		Where("watchlist.user_id = ?", userID).
+		Order("watchlist.sort_order ASC, watchlist.created_at ASC").
+		Find(&funds).Error
+	return funds, err
+}
+
 // HasSentimentCoolingSignal 检查是否有舆情降温信号
 // 判断逻辑：近3天新闻重要性均值 < 近7天均值的 0.7 倍
 func (r *EggRepository) HasSentimentCoolingSignal(fundCode string, date time.Time) (bool, error) {

@@ -14,12 +14,13 @@ import (
 
 // EggService 母鸡状态服务（三铁律决策引擎）
 type EggService struct {
-	repo *repository.EggRepository
+	repo    *repository.EggRepository
+	market  *MarketService
 }
 
 // NewEggService 创建 EggService 实例
-func NewEggService(repo *repository.EggRepository) *EggService {
-	return &EggService{repo: repo}
+func NewEggService(repo *repository.EggRepository, market *MarketService) *EggService {
+	return &EggService{repo: repo, market: market}
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -54,7 +55,8 @@ func (s *EggService) GetEggStatus(userID string) (*dto.EggStatusResponse, error)
 		return nil, fmt.Errorf("获取基金指标失败: %w", err)
 	}
 	if len(metrics) == 0 {
-		return s.buildEmptyResponse(today), nil
+		// 数据库无今日数据，fallback: 从用户 watchlist 实时拉取估值
+		return s.buildFromWatchlist(userID, now), nil
 	}
 
 	// 2. 获取今日 AI 过滤新闻
@@ -375,6 +377,69 @@ func (s *EggService) buildEmptyResponse(date time.Time) *dto.EggStatusResponse {
 			TargetFunds:   []string{},
 		},
 		GeneratedAt: time.Now().Format(time.RFC3339),
+	}
+}
+
+// buildFromWatchlist 当今日 fund_daily_metrics 无数据时，从用户 watchlist 实时拉取估值
+// 作为 fallback，给 FundMetrics 和 FundDistribution 提供可点击数据
+func (s *EggService) buildFromWatchlist(userID string, now time.Time) *dto.EggStatusResponse {
+	funds, err := s.repo.GetWatchlistFundsByUserID(userID)
+	if err != nil || len(funds) == 0 {
+		return s.buildEmptyResponse(now)
+	}
+
+	// 用 MarketService 拉实时估值
+	codes := make([]string, 0, len(funds))
+	nameMap := map[string]string{}
+	for _, f := range funds {
+		codes = append(codes, f.FundCode)
+		nameMap[f.FundCode] = f.FundName
+	}
+
+	quotes, _ := s.market.FetchFundQuotes(codes)
+
+	// 组装成 FundMetric（估值数据，没有连涨天数等字段，设为 0）
+	fundMetrics := make([]dto.FundMetric, 0, len(quotes))
+	for _, q := range quotes {
+		fundMetrics = append(fundMetrics, dto.FundMetric{
+			FundCode:    q.Code,
+			FundName:    q.Name,
+			UnitNav:     q.LastNav,
+			DailyReturn: q.EstReturn,
+		})
+	}
+
+	// 若 FetchFundQuotes 失败或返回空，直接用基金基础信息兜底
+	if len(fundMetrics) == 0 {
+		for _, f := range funds {
+			fundMetrics = append(fundMetrics, dto.FundMetric{
+				FundCode: f.FundCode,
+				FundName: f.FundName,
+			})
+		}
+	}
+
+	return &dto.EggStatusResponse{
+		ChickenStatus: dto.ChickenStatus{
+			OverallState: "resting",
+			StateEmoji:   "🐔💤",
+			StateDesc:    "母鸡休息中 — 今日暂无分析数据，显示实时估值",
+			AlertLevel:   "none",
+			AlertMessage: "今日基金数据未更新，已切换至实时估值模式",
+		},
+		TodayMetrics: fundMetrics,
+		NewsClues:    []dto.NewsClue{},
+		Decision: dto.Decision{
+			TriggeredRule: "none",
+			RuleName:      "无触发",
+			Action:        "observe",
+			ActionEmoji:   "👁️",
+			Suggestion:    "今日无铁律触发，继续观察市场动态",
+			Confidence:    0,
+			Reason:        "今日基金数据未写入，已切换至实时估值模式",
+			TargetFunds:   []string{},
+		},
+		GeneratedAt: now.Format(time.RFC3339),
 	}
 }
 
