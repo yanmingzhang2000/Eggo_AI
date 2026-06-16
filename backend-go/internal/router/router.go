@@ -39,6 +39,9 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 	portfolioCtrl := controller.NewPortfolioController(portfolioSvc)
 	fundCtrl := controller.NewFundController(fundSvc)
 
+	watchlistRepo := repository.NewWatchlistRepository(db)
+	watchlistCtrl := controller.NewWatchlistController(watchlistRepo, fundSvc)
+
 	// ── 路由注册 ──────────────────────────────────────────────
 	api := r.Group("/api/v1")
 	{
@@ -76,6 +79,16 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 			fund.GET("/:code/detail", fundCtrl.GetDetail)
 			fund.GET("/:code/nav-history", fundCtrl.GetNavHistory)
 			fund.GET("/:code/analysis", fundCtrl.GetAnalysis)
+		}
+
+		// 自选基金 — 需要登录
+		wl := api.Group("/watchlist")
+		wl.Use(middleware.JWTAuthMiddleware(jwtSecret))
+		{
+			wl.GET("", watchlistCtrl.List)
+			wl.POST("", watchlistCtrl.Add)
+			wl.DELETE("/:code", watchlistCtrl.Remove)
+			wl.GET("/check/:code", watchlistCtrl.Check)
 		}
 
 		// 虚拟养鸡（基）— 模拟盘（多鸡笼）— 需要登录，游客不可访问

@@ -32,6 +32,11 @@ func NewFundService(fundRepo *repository.FundRepository, navRepo *repository.Nav
 	}
 }
 
+// EnsureFundPublic 对外暴露的自动播种入口（供其他 controller 调用）
+func (s *FundService) EnsureFundPublic(fundCode string) (*model.Fund, error) {
+	return s.ensureFund(fundCode)
+}
+
 // ensureFund 确保基金在 funds 表里存在，不存在则从天天基金 API 自动播种
 func (s *FundService) ensureFund(fundCode string) (*model.Fund, error) {
 	fund, err := s.fundRepo.FindByCode(fundCode)

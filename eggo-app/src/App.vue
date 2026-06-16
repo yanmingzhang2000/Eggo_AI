@@ -10,6 +10,8 @@ import NewsFeed from '@/components/NewsFeed.vue'
 import MarketDashboard from '@/components/MarketDashboard.vue'
 import Portfolio from '@/components/portfolio/Portfolio.vue'
 import FundDetail from '@/components/FundDetail.vue'
+import WatchlistPanel from '@/components/WatchlistPanel.vue'
+import { useWatchlistStore } from '@/stores/watchlist'
 
 const activeView = ref<'home' | 'portfolio' | 'fundDetail'>('home')
 const selectedFund = ref<{ code: string; name: string } | null>(null)
@@ -17,12 +19,17 @@ const searchCode = ref('')
 
 const authStore = useAuthStore()
 const eggStore = useEggStore()
+const watchlistStore = useWatchlistStore()
 
 const isLoggedIn = computed(() => authStore.isLoggedIn)
 
 onMounted(() => {
   if (isLoggedIn.value) {
     eggStore.fetchEggStatus()
+    // 已登录且非游客，预加载 watchlist
+    if (!authStore.isGuest) {
+      watchlistStore.fetchList()
+    }
   }
 })
 
@@ -122,6 +129,7 @@ function handleSearchFund() {
             查看
           </button>
         </div>
+        <WatchlistPanel v-if="!authStore.isGuest" @view-detail="handleViewDetail" />
         <MarketDashboard />
         <FundDistribution @view-detail="handleViewDetail" />
         <ChickenStatusCard />

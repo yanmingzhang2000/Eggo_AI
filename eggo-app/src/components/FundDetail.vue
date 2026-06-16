@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { get } from '@/utils/request'
+import { useWatchlistStore } from '@/stores/watchlist'
+import { useAuthStore } from '@/stores/auth'
 
 interface FundDetailData {
   fundCode: string
@@ -67,6 +69,23 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'back'): void
 }>()
+
+const watchlistStore = useWatchlistStore()
+const authStore = useAuthStore()
+
+const watched = computed(() => watchlistStore.isWatched(props.fundCode))
+const toggling = ref(false)
+
+async function toggleWatch() {
+  if (!authStore.isLoggedIn || authStore.isGuest) return
+  toggling.value = true
+  if (watched.value) {
+    await watchlistStore.remove(props.fundCode)
+  } else {
+    await watchlistStore.add(props.fundCode)
+  }
+  toggling.value = false
+}
 
 const detail = ref<FundDetailData | null>(null)
 const navHistory = ref<NavHistoryData | null>(null)
@@ -247,6 +266,10 @@ onMounted(() => {
   fetchDetail()
   fetchNavHistory()
   fetchAnalysis()
+  // 确保 watchlist 已加载（用于判断是否已收藏）
+  if (!watchlistStore.loaded && authStore.isLoggedIn && !authStore.isGuest) {
+    watchlistStore.fetchList()
+  }
 })
 </script>
 
@@ -259,6 +282,16 @@ onMounted(() => {
         <span class="detail-nav__name">{{ fundName }}</span>
         <span class="detail-nav__code">{{ fundCode }}</span>
       </div>
+      <!-- 收藏按钮：游客不显示 -->
+      <button
+        v-if="authStore.isLoggedIn && !authStore.isGuest"
+        class="watch-btn"
+        :class="{ 'watch-btn--active': watched }"
+        :disabled="toggling"
+        @click="toggleWatch"
+      >
+        {{ toggling ? '···' : watched ? '★ 已收藏' : '☆ 收藏' }}
+      </button>
     </div>
 
     <!-- 加载状态 -->
@@ -455,6 +488,36 @@ onMounted(() => {
 .back-btn:hover {
   border-color: rgba(255, 215, 0, 0.3);
   color: var(--accent);
+}
+
+.watch-btn {
+  margin-left: auto;
+  padding: 7px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.watch-btn:hover:not(:disabled) {
+  border-color: rgba(255, 215, 0, 0.4);
+  color: var(--accent);
+}
+
+.watch-btn--active {
+  background: rgba(255, 215, 0, 0.12);
+  border-color: rgba(255, 215, 0, 0.5);
+  color: var(--accent);
+}
+
+.watch-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .detail-nav__info {
