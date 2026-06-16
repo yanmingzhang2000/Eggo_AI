@@ -6,7 +6,7 @@ import "time"
 type VirtualPosition struct {
 	ID             int64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	AccountID      int64     `gorm:"column:account_id;not null" json:"accountId"`
-	UserID         int64     `gorm:"column:user_id;not null" json:"userId"`
+	UserID         string    `gorm:"column:user_id;not null" json:"userId"`
 	FundCode       string    `gorm:"column:fund_code;size:10;not null" json:"fundCode"`
 	FundName       string    `gorm:"column:fund_name;size:100" json:"fundName"`
 	Shares         float64   `gorm:"column:shares;default:0" json:"shares"`

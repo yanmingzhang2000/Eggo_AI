@@ -16,7 +16,7 @@ func NewPortfolioRepository(db *gorm.DB) *PortfolioRepository {
 
 // ── 账户 ──────────────────────────────────────────────────────────────────
 
-func (r *PortfolioRepository) ListAccounts(userID int64) ([]model.VirtualAccount, error) {
+func (r *PortfolioRepository) ListAccounts(userID string) ([]model.VirtualAccount, error) {
 	var accounts []model.VirtualAccount
 	err := r.db.Where("user_id = ?", userID).Order("created_at ASC").Find(&accounts).Error
 	return accounts, err

@@ -21,12 +21,12 @@ func NewPortfolioController(svc *service.PortfolioService) *PortfolioController 
 	return &PortfolioController{svc: svc}
 }
 
-func getUserID(ctx *gin.Context) int64 {
+func getUserID(ctx *gin.Context) string {
 	uid, exists := ctx.Get("userID")
 	if !exists || uid == nil {
-		return 0
+		return ""
 	}
-	return uid.(int64)
+	return uid.(string)
 }
 
 func getAccountID(ctx *gin.Context) (int64, bool) {

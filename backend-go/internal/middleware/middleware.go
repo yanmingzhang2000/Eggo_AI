@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -87,8 +86,7 @@ func JWTAuthMiddleware(jwtSecret string) gin.HandlerFunc {
 			return
 		}
 
-		userID, err := strconv.ParseInt(claims.UserID, 10, 64)
-		if err != nil || userID <= 0 {
+		if claims.UserID == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"code":    401,
 				"message": "Token 用户信息异常",
@@ -96,7 +94,7 @@ func JWTAuthMiddleware(jwtSecret string) gin.HandlerFunc {
 			return
 		}
 
-		c.Set("userID", userID)
+		c.Set("userID", claims.UserID)
 		c.Next()
 	}
 }

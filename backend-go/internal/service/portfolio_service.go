@@ -25,7 +25,7 @@ func NewPortfolioService(repo *repository.PortfolioRepository, mkt *MarketServic
 type AccountSummary struct {
 	ID             int64   `json:"id"`
 	Name           string  `json:"name"`
-	UserID         int64   `json:"userId"`
+	UserID         string  `json:"userId"`
 	InitialBalance float64 `json:"initialBalance"`
 	CashBalance    float64 `json:"cashBalance"`
 	FrozenCash     float64 `json:"frozenCash"`
@@ -37,7 +37,7 @@ type AccountSummary struct {
 }
 
 // ListAccounts 获取用户所有鸡笼
-func (s *PortfolioService) ListAccounts(userID int64) ([]AccountSummary, error) {
+func (s *PortfolioService) ListAccounts(userID string) ([]AccountSummary, error) {
 	accounts, err := s.repo.ListAccounts(userID)
 	if err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func (s *PortfolioService) ListAccounts(userID int64) ([]AccountSummary, error) 
 }
 
 // CreateAccount 创建虚拟账户（鸡笼）
-func (s *PortfolioService) CreateAccount(userID int64, name string, initialBalance float64) (*model.VirtualAccount, error) {
+func (s *PortfolioService) CreateAccount(userID string, name string, initialBalance float64) (*model.VirtualAccount, error) {
 	if name == "" {
 		name = "我的鸡笼"
 	}

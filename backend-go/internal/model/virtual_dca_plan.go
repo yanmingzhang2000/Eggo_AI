@@ -6,7 +6,7 @@ import "time"
 type VirtualDCAPlan struct {
 	ID           int64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	AccountID    int64     `gorm:"column:account_id;not null" json:"accountId"`
-	UserID       int64     `gorm:"column:user_id;not null" json:"userId"`
+	UserID       string    `gorm:"column:user_id;not null" json:"userId"`
 	FundCode     string    `gorm:"column:fund_code;size:10;not null" json:"fundCode"`
 	FundName     string    `gorm:"column:fund_name;size:100" json:"fundName"`
 	Amount       float64   `gorm:"column:amount;not null" json:"amount"`          // 每次定投金额
