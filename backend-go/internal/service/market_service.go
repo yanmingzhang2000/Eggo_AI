@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -509,53 +510,40 @@ type FundQuote struct {
 }
 
 // FetchFundDistribution 从天天基金获取全市场基金当日涨跌分布
-// 拉取当日涨幅榜和跌幅榜各100只，统计分布
+// 天天基金排行榜接口被墙，改用固定一批常见基金的实时估值统计涨跌分布
 func (s *MarketService) FetchFundDistribution() (*FundDistribution, error) {
 	cacheKey := "fund_distribution"
 	if cached := s.getCache(cacheKey); cached != nil {
 		return cached.(*FundDistribution), nil
 	}
 
-	today := time.Now().Format("2006-01-02")
-
-	// 拉取涨幅榜 Top100
-	riseURL := fmt.Sprintf(
-		"https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=rzdf&st=desc&sd=%s&ed=%s&qdii=&tabSubtype=,,,,,&pi=1&pn=100&dx=1",
-		today, today,
-	)
-	riseData, err := s.fetchEastmoneyRank(riseURL)
-	if err != nil {
-		return nil, fmt.Errorf("fetch rise rank failed: %w", err)
+	// 固定一批常见基金代码（涵盖股票型、混合型、债券型、指数型，共50只）
+	sampleCodes := []string{
+		"110011", "000001", "000002", "001810", "161725", "519674", "002963", "006479", "009547", "001718",
+		"008763", "008764", "519983", "000961", "001975", "000248", "270002", "003095", "006228", "001856",
+		"000592", "008294", "001974", "110022", "001632", "000369", "005827", "519915", "001714", "000478",
+		"000191", "007119", "003984", "001643", "002001", "007339", "004746", "163417", "260108", "161017",
+		"161005", "000300", "510050", "510300", "510500", "512100", "159915", "159928", "515050", "560003",
 	}
 
-	// 拉取跌幅榜 Top100（按涨幅升序）
-	fallURL := fmt.Sprintf(
-		"https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=rzdf&st=asc&sd=%s&ed=%s&qdii=&tabSubtype=,,,,,&pi=1&pn=100&dx=1",
-		today, today,
-	)
-	fallData, err := s.fetchEastmoneyRank(fallURL)
+	quotes, err := s.FetchFundQuotes(sampleCodes)
 	if err != nil {
-		return nil, fmt.Errorf("fetch fall rank failed: %w", err)
+		return nil, fmt.Errorf("fetch sample fund quotes failed: %w", err)
 	}
 
 	dist := &FundDistribution{
-		UpdateAt: time.Now().Format("2006-01-02 15:04:05"),
+		UpdateAt:  time.Now().Format("2006-01-02 15:04:05"),
+		TopFunds:  []FundQuote{},
+		FlopFunds: []FundQuote{},
 	}
 
-	// 用涨幅榜统计涨跌分布（取样200只）
-	allFunds := append(riseData, fallData...)
-	seen := map[string]bool{}
 	var sumReturn float64
-	for _, f := range allFunds {
-		if seen[f.Code] {
-			continue
-		}
-		seen[f.Code] = true
+	for _, q := range quotes {
 		dist.Total++
-		sumReturn += f.EstReturn
-		if f.EstReturn > 0.01 {
+		sumReturn += q.EstReturn
+		if q.EstReturn > 0.01 {
 			dist.RiseCount++
-		} else if f.EstReturn < -0.01 {
+		} else if q.EstReturn < -0.01 {
 			dist.FallCount++
 		} else {
 			dist.FlatCount++
@@ -565,19 +553,20 @@ func (s *MarketService) FetchFundDistribution() (*FundDistribution, error) {
 		dist.AvgReturn = math.Round(sumReturn/float64(dist.Total)*100) / 100
 	}
 
-	// Top5 涨幅（riseData 已降序）
-	for i, f := range riseData {
-		if i >= 5 {
-			break
-		}
-		dist.TopFunds = append(dist.TopFunds, f)
+	// 排序取 Top5 涨幅/跌幅
+	sortedQuotes := make([]FundQuote, len(quotes))
+	copy(sortedQuotes, quotes)
+	sort.Slice(sortedQuotes, func(i, j int) bool {
+		return sortedQuotes[i].EstReturn > sortedQuotes[j].EstReturn
+	})
+
+	// Top5 涨幅
+	for i := 0; i < 5 && i < len(sortedQuotes); i++ {
+		dist.TopFunds = append(dist.TopFunds, sortedQuotes[i])
 	}
-	// Top5 跌幅（fallData 已升序，取前5即跌幅最大）
-	for i, f := range fallData {
-		if i >= 5 {
-			break
-		}
-		dist.FlopFunds = append(dist.FlopFunds, f)
+	// Top5 跌幅（倒序取）
+	for i := len(sortedQuotes) - 1; i >= 0 && len(dist.FlopFunds) < 5; i-- {
+		dist.FlopFunds = append(dist.FlopFunds, sortedQuotes[i])
 	}
 
 	s.setCache(cacheKey, dist, 3*time.Minute)
