@@ -20,15 +20,17 @@ type FundService struct {
 	navRepo     *repository.NavRepository
 	eggRepo     *repository.EggRepository
 	market      *MarketService
+	tushare     *TushareService
 }
 
 // NewFundService 创建 FundService 实例
-func NewFundService(fundRepo *repository.FundRepository, navRepo *repository.NavRepository, eggRepo *repository.EggRepository, market *MarketService) *FundService {
+func NewFundService(fundRepo *repository.FundRepository, navRepo *repository.NavRepository, eggRepo *repository.EggRepository, market *MarketService, tushare *TushareService) *FundService {
 	return &FundService{
 		fundRepo: fundRepo,
 		navRepo:  navRepo,
 		eggRepo:  eggRepo,
 		market:   market,
+		tushare:  tushare,
 	}
 }
 
@@ -44,9 +46,9 @@ func (s *FundService) ensureFund(fundCode string) (*model.Fund, error) {
 		return fund, nil
 	}
 
-	// 不存在，尝试从外部 API 获取基本信息
+	// 不存在，尝试从 Tushare 获取基本信息
 	log.Printf("[FundService] 基金 %s 不在数据库，尝试自动播种", fundCode)
-	info, fetchErr := s.market.FetchFundInfo(fundCode)
+	info, fetchErr := s.tushare.GetFundInfo(fundCode)
 	if fetchErr != nil {
 		return nil, fmt.Errorf("基金 %s 不存在且无法获取信息: %w", fundCode, fetchErr)
 	}
@@ -168,7 +170,7 @@ func (s *FundService) GetNavHistory(fundCode string, days int) (*dto.NavHistoryR
 	// 数据库没有历史数据时，实时从天天基金拉取
 	if len(points) < 2 {
 		log.Printf("[FundService] %s 数据库无净值历史，实时拉取", fundCode)
-		livePoints, fetchErr := s.market.FetchFundNavHistory(fundCode, days)
+		livePoints, fetchErr := s.tushare.GetFundNavHistory(fundCode, days)
 		if fetchErr != nil {
 			log.Printf("[FundService] 实时拉取净值历史失败: %v", fetchErr)
 		} else {
@@ -238,7 +240,11 @@ func (s *FundService) buildLiveAnalysis(fund *model.Fund, fundCode string) *dto.
 	}
 
 	// 拉近20天历史净值判断趋势
-	history, _ := s.market.FetchFundNavHistory(fundCode, 20)
+	tsHistory, _ := s.tushare.GetFundNavHistory(fundCode, 20)
+	history := make([]FundNavPoint, len(tsHistory))
+	for i, p := range tsHistory {
+		history[i] = FundNavPoint{Date: p.Date, UnitNav: p.UnitNav, AccNav: p.AccNav, DailyReturn: p.DailyReturn}
+	}
 	trendLabel, trendColor := s.judgeTrendFromPoints(history)
 
 	// 用实时涨跌幅触发铁律一/三的简化判断

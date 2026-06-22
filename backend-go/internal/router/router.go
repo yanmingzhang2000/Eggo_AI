@@ -7,11 +7,13 @@ import (
 	"github.com/jishengdan/backend-go/internal/controller"
 	"github.com/jishengdan/backend-go/internal/middleware"
 	"github.com/jishengdan/backend-go/internal/repository"
+	"github.com/jishengdan/backend-go/internal/scheduler"
 	"github.com/jishengdan/backend-go/internal/service"
+	"github.com/jishengdan/backend-go/pkg/tushare"
 )
 
 // Setup 初始化路由
-func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
+func Setup(db *gorm.DB, jwtSecret string, tsClient *tushare.Client) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
@@ -26,11 +28,12 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 
 	// Service 层
 	authSvc := service.NewAuthService(userRepo, jwtSecret)
-	marketSvc := service.NewMarketService()
+	tsSvc := service.NewTushareService(tsClient)
+	marketSvc := service.NewMarketService(tsSvc)
 	eggSvc := service.NewEggService(eggRepo, marketSvc)
 	portfolioRepo := repository.NewPortfolioRepository(db)
 	portfolioSvc := service.NewPortfolioService(portfolioRepo, marketSvc)
-	fundSvc := service.NewFundService(fundRepo, navRepo, eggRepo, marketSvc)
+	fundSvc := service.NewFundService(fundRepo, navRepo, eggRepo, marketSvc, tsSvc)
 
 	// Controller 层
 	authCtrl := controller.NewAuthController(authSvc)
@@ -108,6 +111,10 @@ func Setup(db *gorm.DB, jwtSecret string) *gin.Engine {
 			portfolio.GET("/accounts/:id/transactions", portfolioCtrl.GetTransactions)
 		}
 	}
+
+	// 启动定时任务
+	sch := scheduler.New(db, tsClient)
+	sch.Start()
 
 	return r
 }

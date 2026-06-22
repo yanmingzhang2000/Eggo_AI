@@ -6,6 +6,7 @@ type Config struct {
 	Database DatabaseConfig
 	JWT      JWTConfig
 	Redis    RedisConfig
+	Tushare  TushareConfig
 }
 
 type ServerConfig struct {
@@ -30,4 +31,8 @@ type RedisConfig struct {
 	Addr     string
 	Password string
 	DB       int
+}
+
+type TushareConfig struct {
+	Token string
 }

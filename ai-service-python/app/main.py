@@ -2,16 +2,21 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.config import settings
 from app.api.v1.router import api_router
+from app.tasks.crawler.news import crawl_finance_news
+
+scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # startup: 初始化 DB 连接池、Redis、Celery 等
+    scheduler.add_job(crawl_finance_news, "cron", hour="8,12,18", minute=0, id="crawl_news", replace_existing=True)
+    scheduler.start()
     yield
-    # shutdown: 清理资源
+    scheduler.shutdown(wait=False)
 
 
 def create_app() -> FastAPI:
@@ -30,6 +35,5 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-
     port = int(os.getenv("PORT", "8000"))
     uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=settings.DEBUG)

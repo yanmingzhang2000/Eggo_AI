@@ -11,6 +11,7 @@ import (
 
 	"github.com/jishengdan/backend-go/internal/config"
 	"github.com/jishengdan/backend-go/internal/router"
+	"github.com/jishengdan/backend-go/pkg/tushare"
 )
 
 func main() {
@@ -20,8 +21,11 @@ func main() {
 	// 2. 初始化数据库
 	db := initDB(cfg)
 
-	// 3. 初始化路由
-	r := router.Setup(db, cfg.JWT.Secret)
+	// 3. 初始化 Tushare 客户端
+	tsClient := tushare.NewClient(cfg.Tushare.Token)
+
+	// 4. 初始化路由
+	r := router.Setup(db, cfg.JWT.Secret, tsClient)
 
 	// 4. 启动服务器
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
@@ -50,6 +54,9 @@ func loadConfig() *config.Config {
 		JWT: config.JWTConfig{
 			Secret:     getEnv("JWT_SECRET", "eggo_jwt_secret_2024"),
 			ExpireHour: 72,
+		},
+		Tushare: config.TushareConfig{
+			Token: getEnv("TUSHARE_TOKEN", ""),
 		},
 	}
 }
